@@ -1,0 +1,56 @@
+{
+  "name": "garmin-watchface",
+  "author": "hidea",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {
+    "@rebble/clay": "^1.0.8"
+  },
+  "pebble": {
+    "displayName": "Garmin Fitness",
+    "uuid": "9aad80d1-b4f7-4b8c-9816-12770be7cfaa",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery"],
+    "watchapp": { "watchface": true },
+    "capabilities": ["configurable"],
+    "messageKeys": [
+      "REQUEST_GARMIN",
+      "GARMIN_STATUS",
+      "GARMIN_BB",
+      "GARMIN_STRESS",
+      "GARMIN_HRV",
+      "GARMIN_RECOVERY",
+      "GARMIN_VO2MAX",
+      "GARMIN_FTP",
+      "GARMIN_INTMIN",
+      "GARMIN_LOAD",
+      "GARMIN_HR",
+      "GARMIN_STEPS",
+      "GARMIN_SLEEP",
+      "GARMIN_COACH",
+      "GARMIN_SPO2",
+      "GarminUser",
+      "GarminPass",
+      "Slot0",
+      "Slot1",
+      "Slot2",
+      "Slot3",
+      "Slot4",
+      "Slot5",
+      "UpdateInterval",
+      "GARMIN_RSP",
+      "GARMIN_HEAT",
+      "GARMIN_ALTACL",
+      "GARMIN_TSTATUS",
+      "GARMIN_TREADY"
+    ],
+    "resources": {
+      "media": [
+        { "type": "font", "name": "RUSSO_ONE_62", "file": "RussoOne.ttf" },
+        { "type": "font", "name": "RUSSO_ONE_20", "file": "RussoOne.ttf" }
+      ]
+    }
+  }
+}
