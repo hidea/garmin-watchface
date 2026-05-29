@@ -178,6 +178,28 @@ static void slot_get_display(const char *key,
   }
 }
 
+static uint32_t slot_get_resource_id(const char *key) {
+  if (strcmp(key, "BB")  == 0) return RESOURCE_ID_METRIC_BB;
+  if (strcmp(key, "STR") == 0) return RESOURCE_ID_METRIC_STR;
+  if (strcmp(key, "HRV") == 0) return RESOURCE_ID_METRIC_HRV;
+  if (strcmp(key, "REC") == 0) return RESOURCE_ID_METRIC_REC;
+  if (strcmp(key, "VO2") == 0) return RESOURCE_ID_METRIC_VO2;
+  if (strcmp(key, "FTP") == 0) return RESOURCE_ID_METRIC_FTP;
+  if (strcmp(key, "MIN") == 0) return RESOURCE_ID_METRIC_MIN;
+  if (strcmp(key, "TLD") == 0) return RESOURCE_ID_METRIC_TLD;
+  if (strcmp(key, "HR")  == 0) return RESOURCE_ID_METRIC_HR;
+  if (strcmp(key, "STP") == 0) return RESOURCE_ID_METRIC_STP;
+  if (strcmp(key, "SLP") == 0) return RESOURCE_ID_METRIC_SLP;
+  if (strcmp(key, "SCH") == 0) return RESOURCE_ID_METRIC_SCH;
+  if (strcmp(key, "O2")  == 0) return RESOURCE_ID_METRIC_O2;
+  if (strcmp(key, "RSP") == 0) return RESOURCE_ID_METRIC_RSP;
+  if (strcmp(key, "HEA") == 0) return RESOURCE_ID_METRIC_HEA;
+  if (strcmp(key, "ALT") == 0) return RESOURCE_ID_METRIC_ALT;
+  if (strcmp(key, "TST") == 0) return RESOURCE_ID_METRIC_TST;
+  if (strcmp(key, "TRD") == 0) return RESOURCE_ID_METRIC_TRD;
+  return 0;
+}
+
 // ── Draw procs ────────────────────────────────────────────────────────────────
 
 static void top_update_proc(Layer *layer, GContext *ctx) {
@@ -248,7 +270,6 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int slot_w = b.size.w / 3;
   int slot_h = b.size.h / 2;
-  GFont f_label = fonts_get_system_font(FONT_KEY_GOTHIC_14);
   GFont f_value = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 
   // Dividers
@@ -270,14 +291,21 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
 
     slot_get_display(key, lbl, sizeof(lbl), val, sizeof(val));
 
-    graphics_context_set_text_color(ctx, GColorLightGray);
-    graphics_draw_text(ctx, lbl, f_label,
-        GRect(x + 1, y + 2, slot_w - 2, 14),
-        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+    uint32_t res_id = slot_get_resource_id(key);
+    if (res_id) {
+      GBitmap *icon = gbitmap_create_with_resource(res_id);
+      if (icon) {
+        graphics_context_set_compositing_mode(ctx, GCompOpSet);
+        int icon_y = y + (slot_h - 18) / 2;
+        graphics_draw_bitmap_in_rect(ctx, icon, GRect(x + 2, icon_y, 18, 18));
+        gbitmap_destroy(icon);
+      }
+    }
 
+    int icon_y = y + (slot_h - 18) / 2;
     graphics_context_set_text_color(ctx, GColorWhite);
     graphics_draw_text(ctx, val, f_value,
-        GRect(x + 2, y + 14, slot_w - 4, 17),
+        GRect(x + 22, icon_y - 3, slot_w - 24, 18),
         GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
   }
 }
@@ -439,9 +467,9 @@ static void main_window_load(Window *window) {
   int p       = FACE_PADDING;
   int cw      = bounds.size.w - 2 * p;
   int top_h   = 52;
-  int time_h  = 76;
   int stat_h  = 16;
-  int data_h  = bounds.size.h - 2 * p - top_h - time_h - stat_h;  // 60
+  int data_h  = 52;  // 26px per row
+  int time_h  = bounds.size.h - 2 * p - top_h - stat_h - data_h;  // 92
   int time_y  = p + top_h;
   int stat_y  = time_y + time_h;
   int data_y  = stat_y + stat_h;

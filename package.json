@@ -48,8 +48,26 @@
     ],
     "resources": {
       "media": [
-        { "type": "font", "name": "RUSSO_ONE_62", "file": "RussoOne.ttf" },
-        { "type": "font", "name": "RUSSO_ONE_20", "file": "RussoOne.ttf" }
+        { "type": "font",   "name": "RUSSO_ONE_62", "file": "RussoOne.ttf" },
+        { "type": "font",   "name": "RUSSO_ONE_20", "file": "RussoOne.ttf" },
+        { "type": "bitmap", "name": "METRIC_BB",  "file": "images/metric_bb.png" },
+        { "type": "bitmap", "name": "METRIC_STR", "file": "images/metric_str.png" },
+        { "type": "bitmap", "name": "METRIC_HRV", "file": "images/metric_hrv.png" },
+        { "type": "bitmap", "name": "METRIC_REC", "file": "images/metric_rec.png" },
+        { "type": "bitmap", "name": "METRIC_VO2", "file": "images/metric_vo2.png" },
+        { "type": "bitmap", "name": "METRIC_FTP", "file": "images/metric_ftp.png" },
+        { "type": "bitmap", "name": "METRIC_MIN", "file": "images/metric_min.png" },
+        { "type": "bitmap", "name": "METRIC_TLD", "file": "images/metric_tld.png" },
+        { "type": "bitmap", "name": "METRIC_HR",  "file": "images/metric_hr.png" },
+        { "type": "bitmap", "name": "METRIC_STP", "file": "images/metric_stp.png" },
+        { "type": "bitmap", "name": "METRIC_SLP", "file": "images/metric_slp.png" },
+        { "type": "bitmap", "name": "METRIC_SCH", "file": "images/metric_sch.png" },
+        { "type": "bitmap", "name": "METRIC_O2",  "file": "images/metric_o2.png" },
+        { "type": "bitmap", "name": "METRIC_RSP", "file": "images/metric_rsp.png" },
+        { "type": "bitmap", "name": "METRIC_HEA", "file": "images/metric_hea.png" },
+        { "type": "bitmap", "name": "METRIC_ALT", "file": "images/metric_alt.png" },
+        { "type": "bitmap", "name": "METRIC_TST", "file": "images/metric_tst.png" },
+        { "type": "bitmap", "name": "METRIC_TRD", "file": "images/metric_trd.png" }
       ]
     }
   }

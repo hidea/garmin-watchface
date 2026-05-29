@@ -2,3 +2,6 @@ build/
 node_modules/
 .lock-waf_darwin_build
 resources/RussoOne.ttf
+resources/design/
+.serena/
+resources/images/metric_preview*.png
