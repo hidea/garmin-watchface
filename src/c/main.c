@@ -68,6 +68,7 @@ static Layer        *s_border_layer;
 
 static GFont         s_font_time;
 static GFont         s_font_num;
+static GFont         s_font_unit;
 static GFont         s_font_label;
 
 static int           s_battery_level = 100;
@@ -345,6 +346,49 @@ static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int slot_w, int 
   gdraw_command_image_destroy(pdc);
 }
 
+static void draw_num_with_unit(GContext *ctx, const char *val,
+                               GFont font_num, GFont font_unit,
+                               GRect rect, GTextAlignment align) {
+  int split = 0;
+  while (val[split] && (val[split] == '-' ||
+         (val[split] >= '0' && val[split] <= '9') || val[split] == '.')) {
+    split++;
+  }
+  if (val[split] == '\0') {
+    graphics_draw_text(ctx, val, font_num, rect,
+        GTextOverflowModeTrailingEllipsis, align, NULL);
+    return;
+  }
+
+  char num_part[10], unit_part[6];
+  strncpy(num_part, val, split);
+  num_part[split] = '\0';
+  strncpy(unit_part, val + split, sizeof(unit_part) - 1);
+  unit_part[sizeof(unit_part) - 1] = '\0';
+
+  GRect big = GRect(0, 0, 200, 50);
+  GSize nsz = graphics_text_layout_get_content_size(num_part, font_num,
+      big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+  GSize usz = graphics_text_layout_get_content_size(unit_part, font_unit,
+      big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+
+  int total_w = nsz.w + usz.w;
+  int sx;
+  if (align == GTextAlignmentCenter)
+    sx = rect.origin.x + (rect.size.w - total_w) / 2;
+  else if (align == GTextAlignmentRight)
+    sx = rect.origin.x + rect.size.w - total_w;
+  else
+    sx = rect.origin.x;
+
+  graphics_draw_text(ctx, num_part, font_num,
+      GRect(sx, rect.origin.y, nsz.w + 4, rect.size.h),
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  graphics_draw_text(ctx, unit_part, font_unit,
+      GRect(sx + nsz.w, rect.origin.y + (nsz.h - usz.h), usz.w + 4, rect.size.h),
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+}
+
 // ── Draw procs ────────────────────────────────────────────────────────────────
 
 static void top_data_update_proc(Layer *layer, GContext *ctx) {
@@ -532,15 +576,14 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
       if (icon) {
         graphics_context_set_compositing_mode(ctx, GCompOpSet);
         int ix = x + (slot_w - 18) / 2;
-        graphics_draw_bitmap_in_rect(ctx, icon, GRect(ix, 4, 18, 18));
+        graphics_draw_bitmap_in_rect(ctx, icon, GRect(ix, 6, 18, 18));
         gbitmap_destroy(icon);
       }
     }
 
     graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, val, s_font_num,
-        GRect(x + 1, 24, slot_w - 2, 28),
-        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+    draw_num_with_unit(ctx, val, s_font_num, s_font_unit,
+        GRect(x + 1, 17, slot_w - 2, 28), GTextAlignmentCenter);
   }
 }
 
@@ -758,6 +801,7 @@ static void main_window_load(Window *window) {
 
   s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_62));
   s_font_num   = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  s_font_unit  = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   s_font_label = fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21);
 
   int p       = FACE_PADDING;
@@ -765,7 +809,7 @@ static void main_window_load(Window *window) {
   int top_h   = 52;
   int stat_h  = 16;
   int gstat_h = 16;
-  int data_h  = 52;
+  int data_h  = 46;
   int time_h  = bounds.size.h - 2 * p - top_h - stat_h - gstat_h - data_h;  // 76
   int time_y  = p + top_h + stat_h;
   int gstat_y = time_y + time_h;
