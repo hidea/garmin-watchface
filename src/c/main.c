@@ -4,22 +4,25 @@
 //
 //  Y=  0 ┌──────────────────────────────────────┐  outer border
 //        │                                      │
-//  Y=  8 │  [5/27  WED]    [████░░ 88%]        │  s_top_layer    (184x52)
-//  Y= 60 │  [         7:17             ]        │  s_time_layer   (184x84)
-//  Y=144 │  [● Garmin Connected        ]        │  s_status_layer (184x16)
-//  Y=160 │  [BB  87│STR  42│HR   68   ]        │  s_data_layer   (184x60)
-//        │  [STP  8K│SLP  78│HRV  Bal ]        │
+//  Y=  8 │ [DATE ] [BAT  ] [HR   ]             │  s_top_data_layer (184x36)
+//  Y= 44 │ [BT][🔋]  Garmin Connected      [●] │  s_status_layer   (184x16)
+//  Y= 60 │                                      │
+//        │           22:06                      │  s_time_layer     (184x116)
+//  Y=176 │  [icon]   [icon]   [icon]            │  s_data_layer     (184x44)
+//        │   val      val      val              │
 //  Y=228 └──────────────────────────────────────┘
 
-#define SETTINGS_KEY    1
-#define DATA_KEY        2
-#define FACE_PADDING    8
-#define MAX_SLOTS       6
-#define SLOT_STR_LEN    8
+#define SETTINGS_KEY     1
+#define DATA_KEY         2
+#define FACE_PADDING     8
+#define MAX_TOP_SLOTS    3
+#define MAX_BOT_SLOTS    3
+#define SLOT_STR_LEN     8
 #define DEFAULT_INTERVAL 30
 
 typedef struct {
-  char    slot[MAX_SLOTS][SLOT_STR_LEN];
+  char    top_slot[MAX_TOP_SLOTS][SLOT_STR_LEN];
+  char    bot_slot[MAX_BOT_SLOTS][SLOT_STR_LEN];
   uint8_t interval;
 } WatchSettings;
 
@@ -45,20 +48,33 @@ typedef struct {
   int8_t  train_ready;
 } GarminData;
 
+typedef struct {
+  int16_t  heart_rate;
+  int32_t  steps;
+  int32_t  sleep_minutes;
+  int8_t   weather_temp;
+  int8_t   weather_code;
+  uint16_t sunrise;
+  uint16_t sunset;
+} PebbleData;
+
 static Window       *s_window;
-static Layer        *s_top_layer;
+static Layer        *s_top_data_layer;
+static Layer        *s_status_layer;        // BT + battery (centered)
 static Layer        *s_time_layer;
-static Layer        *s_status_layer;
+static Layer        *s_garmin_status_layer; // "GARMIN ▲" above data
 static Layer        *s_data_layer;
 static Layer        *s_border_layer;
 
 static GFont         s_font_time;
+static GFont         s_font_num;
 static GFont         s_font_label;
 
 static int           s_battery_level = 100;
 static bool          s_is_24h        = true;
 static WatchSettings s_settings;
 static GarminData    s_garmin;
+static PebbleData    s_pebble;
 
 static char s_time_buf[8];
 static char s_ampm_buf[3];
@@ -69,12 +85,12 @@ static char s_bat_buf[5];
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static void settings_init_defaults(void) {
-  strncpy(s_settings.slot[0], "BB",  SLOT_STR_LEN);
-  strncpy(s_settings.slot[1], "STR", SLOT_STR_LEN);
-  strncpy(s_settings.slot[2], "HR",  SLOT_STR_LEN);
-  strncpy(s_settings.slot[3], "STP", SLOT_STR_LEN);
-  strncpy(s_settings.slot[4], "SLP", SLOT_STR_LEN);
-  strncpy(s_settings.slot[5], "HRV", SLOT_STR_LEN);
+  strncpy(s_settings.top_slot[0], "DATE", SLOT_STR_LEN);
+  strncpy(s_settings.top_slot[1], "BAT",  SLOT_STR_LEN);
+  strncpy(s_settings.top_slot[2], "HR",   SLOT_STR_LEN);
+  strncpy(s_settings.bot_slot[0], "BB",   SLOT_STR_LEN);
+  strncpy(s_settings.bot_slot[1], "STR",  SLOT_STR_LEN);
+  strncpy(s_settings.bot_slot[2], "HRV",  SLOT_STR_LEN);
   s_settings.interval = DEFAULT_INTERVAL;
 }
 
@@ -98,6 +114,81 @@ static void garmin_init_defaults(void) {
   s_garmin.alt_acclim  = -1;
   strncpy(s_garmin.train_status, "", sizeof(s_garmin.train_status));
   s_garmin.train_ready = -1;
+}
+
+static void pebble_init_defaults(void) {
+  s_pebble.heart_rate    = -1;
+  s_pebble.steps         = -1;
+  s_pebble.sleep_minutes = -1;
+  s_pebble.weather_temp  = -99;
+  s_pebble.weather_code  = -1;
+  s_pebble.sunrise       = 0;
+  s_pebble.sunset        = 0;
+}
+
+static void format_sun_time(uint16_t minutes, char *buf, size_t sz) {
+  if (minutes == 0) { snprintf(buf, sz, "--:--"); return; }
+  snprintf(buf, sz, "%d:%02d", (int)(minutes / 60), (int)(minutes % 60));
+}
+
+static void format_sleep(int32_t minutes, char *buf, size_t sz) {
+  if (minutes <= 0) { snprintf(buf, sz, "--"); return; }
+  int h = (int)(minutes / 60);
+  int m = (int)(minutes % 60);
+  if (h > 0) snprintf(buf, sz, "%dh%02d", h, m);
+  else        snprintf(buf, sz, "%dm", m);
+}
+
+static const char *weather_condition(int8_t code) {
+  switch (code) {
+    case 0: return "Sun";
+    case 1: return "Pcld";
+    case 2: return "Cld";
+    case 3: return "Ovrc";
+    case 4: return "Fog";
+    case 5: return "Drzl";
+    case 6: return "Rain";
+    case 7: return "Snow";
+    case 8: return "Strm";
+    default: return "--";
+  }
+}
+
+static void top_slot_get_lines(const char *key,
+                                char *line1, size_t l1sz,
+                                char *line2, size_t l2sz) {
+  if (strcmp(key, "DATE") == 0) {
+    snprintf(line1, l1sz, "%s", s_date_buf);
+    snprintf(line2, l2sz, "%s", s_day_buf);
+  } else if (strcmp(key, "BAT") == 0) {
+    snprintf(line1, l1sz, "Bat");
+    snprintf(line2, l2sz, "%s", s_bat_buf);
+  } else if (strcmp(key, "HR") == 0) {
+    snprintf(line1, l1sz, "HR");
+    if (s_pebble.heart_rate > 0) snprintf(line2, l2sz, "%d", (int)s_pebble.heart_rate);
+    else snprintf(line2, l2sz, "--");
+  } else if (strcmp(key, "STP") == 0) {
+    snprintf(line1, l1sz, "Steps");
+    if (s_pebble.steps >= 0) {
+      int32_t s = s_pebble.steps;
+      if (s >= 10000)     snprintf(line2, l2sz, "%dk", (int)(s / 1000));
+      else if (s >= 1000) snprintf(line2, l2sz, "%d.%dk", (int)(s / 1000), (int)((s % 1000) / 100));
+      else                snprintf(line2, l2sz, "%d", (int)s);
+    } else snprintf(line2, l2sz, "--");
+  } else if (strcmp(key, "SLP") == 0) {
+    snprintf(line1, l1sz, "Sleep");
+    format_sleep(s_pebble.sleep_minutes, line2, l2sz);
+  } else if (strcmp(key, "SRS") == 0) {
+    format_sun_time(s_pebble.sunrise, line1, l1sz);
+    format_sun_time(s_pebble.sunset,  line2, l2sz);
+  } else if (strcmp(key, "WTH") == 0) {
+    snprintf(line1, l1sz, "%s", weather_condition(s_pebble.weather_code));
+    if (s_pebble.weather_temp != -99) snprintf(line2, l2sz, "%dC", (int)s_pebble.weather_temp);
+    else snprintf(line2, l2sz, "--");
+  } else {
+    snprintf(line1, l1sz, "---");
+    snprintf(line2, l2sz, "--");
+  }
 }
 
 static void slot_get_display(const char *key,
@@ -200,41 +291,207 @@ static uint32_t slot_get_resource_id(const char *key) {
   return 0;
 }
 
+typedef enum {
+  COND_CLEAR_DAY = 0,
+  COND_PARTLY_CLOUDY,
+  COND_CLOUDY,
+  COND_LIGHT_RAIN,
+  COND_HEAVY_RAIN,
+  COND_RAINING_SNOWING,
+  COND_LIGHT_SNOW,
+  COND_HEAVY_SNOW,
+  COND_THUNDERSTORM,
+  COND_GENERIC,
+} WeatherCondition;
+
+static uint32_t weather_pdc_id(WeatherCondition cond) {
+  switch (cond) {
+    case COND_CLEAR_DAY:       return RESOURCE_ID_WEATHER_CLEAR_DAY;
+    case COND_PARTLY_CLOUDY:   return RESOURCE_ID_WEATHER_PARTLY_CLOUDY;
+    case COND_CLOUDY:          return RESOURCE_ID_WEATHER_CLOUDY;
+    case COND_LIGHT_RAIN:      return RESOURCE_ID_WEATHER_LIGHT_RAIN;
+    case COND_HEAVY_RAIN:      return RESOURCE_ID_WEATHER_HEAVY_RAIN;
+    case COND_RAINING_SNOWING: return RESOURCE_ID_WEATHER_RAINING_SNOWING;
+    case COND_LIGHT_SNOW:      return RESOURCE_ID_WEATHER_LIGHT_SNOW;
+    case COND_HEAVY_SNOW:      return RESOURCE_ID_WEATHER_HEAVY_SNOW;
+    case COND_THUNDERSTORM:    return RESOURCE_ID_WEATHER_THUNDERSTORM;
+    default:                   return RESOURCE_ID_WEATHER_GENERIC;
+  }
+}
+
+static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int slot_w, int lh) {
+  if (!res_id) return;
+  GDrawCommandImage *pdc = gdraw_command_image_create_with_resource(res_id);
+  if (!pdc) return;
+
+  // 黒背景で見えるよう黒↔白を反転（透明はそのまま）
+  GDrawCommandList *list = gdraw_command_image_get_command_list(pdc);
+  int n = gdraw_command_list_get_num_commands(list);
+  for (int i = 0; i < n; i++) {
+    GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
+    GColor fill = gdraw_command_get_fill_color(cmd);
+    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, GColorWhite);
+    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, GColorBlack);
+    if (gdraw_command_get_stroke_width(cmd) > 0) {
+      GColor stroke = gdraw_command_get_stroke_color(cmd);
+      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, GColorWhite);
+      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, GColorBlack);
+    }
+  }
+
+  GSize sz = gdraw_command_image_get_bounds_size(pdc);
+  gdraw_command_image_draw(ctx, pdc,
+      GPoint(x + (slot_w - sz.w) / 2, (lh - sz.h) / 2));
+  gdraw_command_image_destroy(pdc);
+}
+
 // ── Draw procs ────────────────────────────────────────────────────────────────
 
-static void top_update_proc(Layer *layer, GContext *ctx) {
+static void top_data_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
-  int half_h = b.size.h / 2;
+  int slot_w = b.size.w / 3;
+  int lh = b.size.h / 2;
+
+  graphics_context_set_stroke_color(ctx, GColorDarkGray);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(slot_w,     0), GPoint(slot_w,     b.size.h));
+  graphics_draw_line(ctx, GPoint(slot_w * 2, 0), GPoint(slot_w * 2, b.size.h));
+
+  char line1[12], line2[12];
+  for (int i = 0; i < MAX_TOP_SLOTS; i++) {
+    int x = i * slot_w;
+    const char *key = s_settings.top_slot[i];
+    top_slot_get_lines(key, line1, sizeof(line1), line2, sizeof(line2));
+    graphics_context_set_text_color(ctx, GColorWhite);
+
+    if (strcmp(key, "BAT") == 0) {
+      // 上段: outdoor-typical スタイルのバッテリーバー
+      int bw = slot_w - 10, bh = 14;
+      int bx = x + 5, by = (lh - bh) / 2;
+      graphics_context_set_stroke_color(ctx, GColorWhite);
+      graphics_context_set_stroke_width(ctx, 2);
+      graphics_draw_round_rect(ctx, GRect(bx, by, bw, bh), 2);
+      graphics_context_set_fill_color(ctx, GColorWhite);
+      graphics_fill_rect(ctx, GRect(bx + bw, by + bh/2 - 2, 3, 4), 1, GCornersRight);
+      GColor fc = (s_battery_level <= 20) ? GColorRed :
+                  (s_battery_level <= 40) ? GColorChromeYellow : GColorGreen;
+      int fw = (s_battery_level * (bw - 6)) / 100;
+      if (fw < 0) fw = 0;
+      graphics_context_set_fill_color(ctx, fc);
+      graphics_fill_rect(ctx, GRect(bx + 3, by + 3, fw, bh - 6), 0, GCornerNone);
+      // 下段: %
+      graphics_context_set_text_color(ctx, GColorWhite);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+    } else if (strcmp(key, "HR") == 0) {
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_HEART, x, slot_w, lh);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+    } else if (strcmp(key, "STP") == 0) {
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_STEPS, x, slot_w, lh);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+    } else if (strcmp(key, "SLP") == 0) {
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_SLEEP, x, slot_w, lh);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+    } else if (strcmp(key, "WTH") == 0) {
+      draw_pdc_top(ctx, weather_pdc_id((WeatherCondition)s_pebble.weather_code), x, slot_w, lh);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+
+    } else if (strcmp(key, "SRS") == 0) {
+      graphics_draw_text(ctx, line1, s_font_num,
+          GRect(x + 1, 0, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+
+    } else {
+      // 標準 (DATE 等): 上=値(num) 下=ラベル(label)
+      graphics_draw_text(ctx, line1, s_font_num,
+          GRect(x + 1, 0, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+      graphics_draw_text(ctx, line2, s_font_label,
+          GRect(x + 1, lh, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+    }
+  }
+}
+
+static void status_update_proc(Layer *layer, GContext *ctx) {
+  GRect b = layer_get_bounds(layer);
+  int cy = b.size.h / 2;
+
+  // BT(12) + gap(6) + Battery(20) = 38px, centered in layer
+  int total_w = 12 + 6 + 20;
+  int sx = (b.size.w - total_w) / 2;
+
+  bool bt = bluetooth_connection_service_peek();
+  GBitmap *bt_bmp = gbitmap_create_with_resource(
+      bt ? RESOURCE_ID_BT_CONNECTED : RESOURCE_ID_BT_DISCONNECTED);
+  if (bt_bmp) {
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, bt_bmp, GRect(sx, cy - 6, 12, 12));
+    gbitmap_destroy(bt_bmp);
+  }
+
+  static const uint32_t bat_res[8] = {
+    RESOURCE_ID_BAT_0, RESOURCE_ID_BAT_1, RESOURCE_ID_BAT_2, RESOURCE_ID_BAT_3,
+    RESOURCE_ID_BAT_4, RESOURCE_ID_BAT_5, RESOURCE_ID_BAT_6, RESOURCE_ID_BAT_7
+  };
+  int bat_idx = s_battery_level * 7 / 100;
+  if (bat_idx < 0) bat_idx = 0;
+  if (bat_idx > 7) bat_idx = 7;
+  GBitmap *bat_bmp = gbitmap_create_with_resource(bat_res[bat_idx]);
+  if (bat_bmp) {
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, bat_bmp, GRect(sx + 18, cy - 5, 20, 10));
+    gbitmap_destroy(bat_bmp);
+  }
+}
+
+static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
+  GRect b = layer_get_bounds(layer);
+  int cy = b.size.h / 2;
+
+  GColor icon_color = (s_garmin.status == 1) ? GColorGreen :
+                      (s_garmin.status == 2) ? GColorChromeYellow : GColorRed;
+
+  // "GARMIN" (~46px) + gap(6) + icon(12) = ~64px, centered
+  int text_w = 42, gap = 1, icon_sz = 12;
+  int sx = (b.size.w - text_w - gap - icon_sz) / 2;
 
   graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, "GARMIN", fonts_get_system_font(FONT_KEY_GOTHIC_14),
+      GRect(sx, -2, text_w, 14),
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 
-  // Left: date and day of week
-  GFont f20 = s_font_label;
-  graphics_draw_text(ctx, s_date_buf, f20,
-      GRect(4, 2, 88, half_h),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
-  graphics_draw_text(ctx, s_day_buf, f20,
-      GRect(4, half_h, 88, half_h),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+  int ix = sx + text_w + gap;
+  int iy = cy - icon_sz / 2;
 
-  // Right: Pebble battery bar + percentage
-  int bar_x = 94, bar_y = 8, bar_w = 72, bar_h = 20;
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  graphics_context_set_stroke_width(ctx, 2);
-  graphics_draw_round_rect(ctx, GRect(bar_x, bar_y, bar_w, bar_h), 2);
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(bar_x + bar_w, bar_y + bar_h / 2 - 3, 4, 6), 1, GCornersRight);
-  GColor fill = (s_battery_level <= 20) ? GColorRed :
-                (s_battery_level <= 40) ? GColorChromeYellow : GColorGreen;
-  int fw = (s_battery_level * (bar_w - 8)) / 100;
-  if (fw < 0) fw = 0;
-  graphics_context_set_fill_color(ctx, fill);
-  graphics_fill_rect(ctx, GRect(bar_x + 4, bar_y + 4, fw, bar_h - 8), 0, GCornerNone);
-
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, s_bat_buf, f20,
-      GRect(94, half_h + 2, 80, half_h),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+  GBitmap *icon = gbitmap_create_with_resource(RESOURCE_ID_GARMIN_STATUS);
+  if (icon) {
+    // 1-bitパレット形式: palette[0]=背景色, palette[1]=前景色を状態色に変更
+    GColor *palette = gbitmap_get_palette(icon);
+    if (palette) {
+      palette[0] = GColorBlack;
+      palette[1] = icon_color;
+    }
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
+    graphics_draw_bitmap_in_rect(ctx, icon, GRect(ix, iy, icon_sz, icon_sz));
+    gbitmap_destroy(icon);
+  }
 }
 
 static void time_update_proc(Layer *layer, GContext *ctx) {
@@ -251,42 +508,20 @@ static void time_update_proc(Layer *layer, GContext *ctx) {
   }
 }
 
-static void status_update_proc(Layer *layer, GContext *ctx) {
-  GRect b = layer_get_bounds(layer);
-  GColor dot_color = (s_garmin.status == 1) ? GColorGreen :
-                     (s_garmin.status == 2) ? GColorChromeYellow : GColorRed;
-  graphics_context_set_fill_color(ctx, dot_color);
-  graphics_fill_circle(ctx, GPoint(7, b.size.h / 2), 4);
-
-  const char *status_text = (s_garmin.status == 1) ? "Garmin Connected" :
-                            (s_garmin.status == 2) ? "Updating..." : "Garmin Offline";
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, status_text, fonts_get_system_font(FONT_KEY_GOTHIC_14),
-      GRect(16, 0, b.size.w - 16, b.size.h),
-      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-}
-
 static void data_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int slot_w = b.size.w / 3;
-  int slot_h = b.size.h / 2;
-  GFont f_value = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
 
-  // Dividers
   graphics_context_set_stroke_color(ctx, GColorDarkGray);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(slot_w,     0), GPoint(slot_w,     b.size.h));
   graphics_draw_line(ctx, GPoint(slot_w * 2, 0), GPoint(slot_w * 2, b.size.h));
-  graphics_draw_line(ctx, GPoint(0, slot_h),     GPoint(b.size.w,   slot_h));
 
   char lbl[8], val[10];
-  for (int i = 0; i < MAX_SLOTS; i++) {
-    int col = i % 3;
-    int row = i / 3;
-    int x = col * slot_w;
-    int y = row * slot_h;
+  for (int i = 0; i < MAX_BOT_SLOTS; i++) {
+    int x = i * slot_w;
 
-    const char *key = s_settings.slot[i];
+    const char *key = s_settings.bot_slot[i];
     if (strcmp(key, "NONE") == 0 || key[0] == '\0') continue;
 
     slot_get_display(key, lbl, sizeof(lbl), val, sizeof(val));
@@ -296,17 +531,16 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
       GBitmap *icon = gbitmap_create_with_resource(res_id);
       if (icon) {
         graphics_context_set_compositing_mode(ctx, GCompOpSet);
-        int icon_y = y + (slot_h - 18) / 2;
-        graphics_draw_bitmap_in_rect(ctx, icon, GRect(x + 2, icon_y, 18, 18));
+        int ix = x + (slot_w - 18) / 2;
+        graphics_draw_bitmap_in_rect(ctx, icon, GRect(ix, 4, 18, 18));
         gbitmap_destroy(icon);
       }
     }
 
-    int icon_y = y + (slot_h - 18) / 2;
     graphics_context_set_text_color(ctx, GColorWhite);
-    graphics_draw_text(ctx, val, f_value,
-        GRect(x + 22, icon_y - 3, slot_w - 24, 18),
-        GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
+    graphics_draw_text(ctx, val, s_font_num,
+        GRect(x + 1, 24, slot_w - 2, 28),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   }
 }
 
@@ -322,8 +556,45 @@ static void border_update_proc(Layer *layer, GContext *ctx) {
 static void battery_callback(BatteryChargeState state) {
   s_battery_level = state.charge_percent;
   snprintf(s_bat_buf, sizeof(s_bat_buf), "%d%%", state.charge_percent);
-  if (s_top_layer) layer_mark_dirty(s_top_layer);
+  if (s_top_data_layer) layer_mark_dirty(s_top_data_layer);
+  if (s_status_layer)   layer_mark_dirty(s_status_layer);
 }
+
+static void bluetooth_callback(bool connected) {
+  if (s_status_layer) layer_mark_dirty(s_status_layer);
+}
+
+#if defined(PBL_HEALTH)
+static void health_handler(HealthEventType event, void *context) {
+  bool changed = false;
+  if (event == HealthEventHeartRateUpdate || event == HealthEventMovementUpdate) {
+    HealthValue hr = health_service_peek_current_value(HealthMetricHeartRateBPM);
+    s_pebble.heart_rate = (hr > 0) ? (int16_t)hr : -1;
+    time_t start = time_start_of_today();
+    HealthValue steps = health_service_sum(HealthMetricStepCount, start, time(NULL));
+    s_pebble.steps = (int32_t)steps;
+    changed = true;
+  }
+  if (event == HealthEventSleepUpdate) {
+    time_t start = time_start_of_today();
+    HealthValue sleep = health_service_sum(HealthMetricSleepSeconds, start, time(NULL));
+    s_pebble.sleep_minutes = (int32_t)(sleep / 60);
+    changed = true;
+  }
+  if (changed && s_top_data_layer) layer_mark_dirty(s_top_data_layer);
+}
+
+static void health_init(void) {
+  HealthValue hr = health_service_peek_current_value(HealthMetricHeartRateBPM);
+  s_pebble.heart_rate = (hr > 0) ? (int16_t)hr : -1;
+  time_t start = time_start_of_today();
+  HealthValue steps = health_service_sum(HealthMetricStepCount, start, time(NULL));
+  s_pebble.steps = (int32_t)steps;
+  HealthValue sleep = health_service_sum(HealthMetricSleepSeconds, start, time(NULL));
+  s_pebble.sleep_minutes = (int32_t)(sleep / 60);
+  health_service_events_subscribe(health_handler, NULL);
+}
+#endif
 
 static void request_garmin_data(void) {
   DictionaryIterator *iter;
@@ -335,8 +606,9 @@ static void request_garmin_data(void) {
 
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
   Tuple *t;
-  bool garmin_updated  = false;
+  bool garmin_updated   = false;
   bool settings_updated = false;
+  bool pebble_updated   = false;
 
   // Garmin status
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_STATUS);
@@ -380,19 +652,38 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_TREADY);
   if (t) { s_garmin.train_ready = (int8_t)t->value->int32; garmin_updated = true; }
 
-  // Clay settings
+  // Pebble native data from JS
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_HEART_RATE);
+  if (t) { s_pebble.heart_rate = (int16_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_STEPS);
+  if (t) { s_pebble.steps = (int32_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_SLEEP);
+  if (t) { s_pebble.sleep_minutes = (int32_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_WEATHER_TEMP);
+  if (t) { s_pebble.weather_temp = (int8_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_WEATHER_CODE);
+  if (t) { s_pebble.weather_code = (int8_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_SUNRISE);
+  if (t) { s_pebble.sunrise = (uint16_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_SUNSET);
+  if (t) { s_pebble.sunset = (uint16_t)t->value->int32; pebble_updated = true; }
+
+  // Clay settings - top slots
+  t = dict_find(iterator, MESSAGE_KEY_TopSlot0);
+  if (t) { strncpy(s_settings.top_slot[0], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_TopSlot1);
+  if (t) { strncpy(s_settings.top_slot[1], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_TopSlot2);
+  if (t) { strncpy(s_settings.top_slot[2], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+
+  // Clay settings - bottom slots
   t = dict_find(iterator, MESSAGE_KEY_Slot0);
-  if (t) { strncpy(s_settings.slot[0], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+  if (t) { strncpy(s_settings.bot_slot[0], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_Slot1);
-  if (t) { strncpy(s_settings.slot[1], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+  if (t) { strncpy(s_settings.bot_slot[1], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_Slot2);
-  if (t) { strncpy(s_settings.slot[2], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
-  t = dict_find(iterator, MESSAGE_KEY_Slot3);
-  if (t) { strncpy(s_settings.slot[3], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
-  t = dict_find(iterator, MESSAGE_KEY_Slot4);
-  if (t) { strncpy(s_settings.slot[4], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
-  t = dict_find(iterator, MESSAGE_KEY_Slot5);
-  if (t) { strncpy(s_settings.slot[5], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+  if (t) { strncpy(s_settings.bot_slot[2], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+
   t = dict_find(iterator, MESSAGE_KEY_UpdateInterval);
   if (t) {
     int v = atoi(t->value->cstring);
@@ -400,7 +691,6 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     settings_updated = true;
   }
 
-  // Trigger immediate fetch when credentials are saved
   t = dict_find(iterator, MESSAGE_KEY_GarminUser);
   bool creds_updated = (t != NULL);
   if (!creds_updated) {
@@ -410,14 +700,19 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
 
   if (settings_updated) {
     persist_write_data(SETTINGS_KEY, &s_settings, sizeof(WatchSettings));
+    if (s_top_data_layer) layer_mark_dirty(s_top_data_layer);
+    if (s_data_layer)     layer_mark_dirty(s_data_layer);
   }
   if (creds_updated) {
     request_garmin_data();
   }
   if (garmin_updated) {
     persist_write_data(DATA_KEY, &s_garmin, sizeof(GarminData));
-    if (s_status_layer) layer_mark_dirty(s_status_layer);
-    if (s_data_layer)   layer_mark_dirty(s_data_layer);
+    if (s_garmin_status_layer) layer_mark_dirty(s_garmin_status_layer);
+    if (s_data_layer)          layer_mark_dirty(s_data_layer);
+  }
+  if (pebble_updated) {
+    if (s_top_data_layer) layer_mark_dirty(s_top_data_layer);
   }
 }
 
@@ -442,7 +737,7 @@ static void update_date(struct tm *t) {
   for (int i = 0; s_day_buf[i]; i++) {
     if (s_day_buf[i] >= 'a' && s_day_buf[i] <= 'z') s_day_buf[i] -= 32;
   }
-  if (s_top_layer) layer_mark_dirty(s_top_layer);
+  if (s_top_data_layer) layer_mark_dirty(s_top_data_layer);
 }
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
@@ -462,33 +757,38 @@ static void main_window_load(Window *window) {
   window_set_background_color(window, GColorBlack);
 
   s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_62));
-  s_font_label = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_20));
+  s_font_num   = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  s_font_label = fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21);
 
   int p       = FACE_PADDING;
   int cw      = bounds.size.w - 2 * p;
   int top_h   = 52;
   int stat_h  = 16;
-  int data_h  = 52;  // 26px per row
-  int time_h  = bounds.size.h - 2 * p - top_h - stat_h - data_h;  // 92
-  int time_y  = p + top_h;
-  int stat_y  = time_y + time_h;
-  int data_y  = stat_y + stat_h;
+  int gstat_h = 16;
+  int data_h  = 52;
+  int time_h  = bounds.size.h - 2 * p - top_h - stat_h - gstat_h - data_h;  // 76
+  int time_y  = p + top_h + stat_h;
+  int gstat_y = time_y + time_h;
+  int data_y  = gstat_y + gstat_h;
 
-  s_top_layer    = layer_create(GRect(p, p,      cw, top_h));
-  s_time_layer   = layer_create(GRect(p, time_y, cw, time_h));
-  s_status_layer = layer_create(GRect(p, stat_y, cw, stat_h));
-  s_data_layer   = layer_create(GRect(p, data_y, cw, data_h));
-  s_border_layer = layer_create(bounds);
+  s_top_data_layer    = layer_create(GRect(p, p,        cw, top_h));
+  s_status_layer      = layer_create(GRect(p, p+top_h,  cw, stat_h));
+  s_time_layer        = layer_create(GRect(p, time_y,   cw, time_h));
+  s_garmin_status_layer = layer_create(GRect(p, gstat_y, cw, gstat_h));
+  s_data_layer        = layer_create(GRect(p, data_y,   cw, data_h));
+  s_border_layer      = layer_create(bounds);
 
-  layer_set_update_proc(s_top_layer,    top_update_proc);
-  layer_set_update_proc(s_time_layer,   time_update_proc);
-  layer_set_update_proc(s_status_layer, status_update_proc);
-  layer_set_update_proc(s_data_layer,   data_update_proc);
-  layer_set_update_proc(s_border_layer, border_update_proc);
+  layer_set_update_proc(s_top_data_layer,    top_data_update_proc);
+  layer_set_update_proc(s_status_layer,      status_update_proc);
+  layer_set_update_proc(s_time_layer,        time_update_proc);
+  layer_set_update_proc(s_garmin_status_layer, garmin_status_update_proc);
+  layer_set_update_proc(s_data_layer,        data_update_proc);
+  layer_set_update_proc(s_border_layer,      border_update_proc);
 
-  layer_add_child(wl, s_top_layer);
-  layer_add_child(wl, s_time_layer);
+  layer_add_child(wl, s_top_data_layer);
   layer_add_child(wl, s_status_layer);
+  layer_add_child(wl, s_time_layer);
+  layer_add_child(wl, s_garmin_status_layer);
   layer_add_child(wl, s_data_layer);
   layer_add_child(wl, s_border_layer);
 
@@ -508,10 +808,10 @@ static void main_window_load(Window *window) {
 
 static void main_window_unload(Window *window) {
   fonts_unload_custom_font(s_font_time);
-  fonts_unload_custom_font(s_font_label);
-  layer_destroy(s_top_layer);
-  layer_destroy(s_time_layer);
+  layer_destroy(s_top_data_layer);
   layer_destroy(s_status_layer);
+  layer_destroy(s_time_layer);
+  layer_destroy(s_garmin_status_layer);
   layer_destroy(s_data_layer);
   layer_destroy(s_border_layer);
 }
@@ -521,6 +821,7 @@ static void main_window_unload(Window *window) {
 static void init(void) {
   settings_init_defaults();
   garmin_init_defaults();
+  pebble_init_defaults();
 
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers){
@@ -532,9 +833,14 @@ static void init(void) {
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
   battery_state_service_subscribe(battery_callback);
   battery_callback(battery_state_service_peek());
+  bluetooth_connection_service_subscribe(bluetooth_callback);
+
+#if defined(PBL_HEALTH)
+  health_init();
+#endif
 
   app_message_register_inbox_received(inbox_received_callback);
-  app_message_open(256, 64);
+  app_message_open(512, 64);
 
   request_garmin_data();
 }
@@ -542,6 +848,10 @@ static void init(void) {
 static void deinit(void) {
   tick_timer_service_unsubscribe();
   battery_state_service_unsubscribe();
+  bluetooth_connection_service_unsubscribe();
+#if defined(PBL_HEALTH)
+  health_service_events_unsubscribe();
+#endif
   window_destroy(s_window);
 }
 

@@ -446,6 +446,112 @@ function parseValue(metric, data) {
   return null;
 }
 
+// ── Sunrise/Sunset (NOAA simplified algorithm) ────────────────────────────────
+function calcSunriseSunset(lat, lon, date) {
+  var RAD = Math.PI / 180;
+  var start = new Date(date.getFullYear(), 0, 0);
+  var dayOfYear = Math.floor((date - start) / 86400000);
+  var gamma = (2 * Math.PI / 365) * (dayOfYear - 1);
+  var eqtime = 229.18 * (
+    0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) -
+    0.014615 * Math.cos(2 * gamma) - 0.04089 * Math.sin(2 * gamma)
+  );
+  var decl = 0.006918 -
+    0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) -
+    0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) -
+    0.002697 * Math.cos(3 * gamma) + 0.00148  * Math.sin(3 * gamma);
+  var latRad = lat * RAD;
+  var cosHa = Math.cos(90.833 * RAD) / (Math.cos(latRad) * Math.cos(decl)) -
+              Math.tan(latRad) * Math.tan(decl);
+  if (cosHa < -1 || cosHa > 1) return null;
+  var ha = Math.acos(cosHa);
+  var tzOffset = -date.getTimezoneOffset();
+  var sunrise = Math.round(720 - 4 * (lon + ha / RAD) - eqtime + tzOffset);
+  var sunset  = Math.round(720 - 4 * (lon - ha / RAD) - eqtime + tzOffset);
+  return {
+    sunrise: ((sunrise % 1440) + 1440) % 1440,
+    sunset:  ((sunset  % 1440) + 1440) % 1440
+  };
+}
+
+// WeatherCondition enum (C 側と同順)
+var COND_CLEAR_DAY       = 0;
+var COND_PARTLY_CLOUDY   = 1;
+var COND_CLOUDY          = 2;
+var COND_LIGHT_RAIN      = 3;
+var COND_HEAVY_RAIN      = 4;
+var COND_RAINING_SNOWING = 5;
+var COND_LIGHT_SNOW      = 6;
+var COND_HEAVY_SNOW      = 7;
+var COND_THUNDERSTORM    = 8;
+var COND_GENERIC         = 9;
+
+function wmoToCondition(wmo) {
+  if (wmo === 0)            return COND_CLEAR_DAY;
+  if (wmo <= 2)             return COND_PARTLY_CLOUDY;
+  if (wmo <= 3)             return COND_CLOUDY;
+  if (wmo <= 48)            return COND_CLOUDY;       // fog → cloudy
+  if (wmo <= 55)            return COND_LIGHT_RAIN;   // drizzle
+  if (wmo <= 57)            return COND_RAINING_SNOWING;
+  if (wmo <= 61)            return COND_LIGHT_RAIN;
+  if (wmo <= 67)            return COND_HEAVY_RAIN;
+  if (wmo <= 75)            return COND_LIGHT_SNOW;
+  if (wmo <= 77)            return COND_HEAVY_SNOW;
+  if (wmo <= 82)            return COND_HEAVY_RAIN;   // rain showers
+  if (wmo <= 86)            return COND_LIGHT_SNOW;   // snow showers
+  if (wmo === 95)           return COND_THUNDERSTORM;
+  if (wmo <= 99)            return COND_THUNDERSTORM;
+  return COND_GENERIC;
+}
+
+function fetchAndSendPebble(lat, lon) {
+  var today    = new Date();
+  var t = calcSunriseSunset(lat, lon, today);
+  if (t) {
+    Pebble.sendAppMessage({
+      'PEBBLE_SUNRISE': t.sunrise,
+      'PEBBLE_SUNSET':  t.sunset
+    }, function() {
+      console.log('Sun times sent: rise=' + t.sunrise + ' set=' + t.sunset);
+    }, function(e) {
+      console.log('Sun send failed: ' + JSON.stringify(e));
+    });
+  }
+
+  var url = 'https://api.open-meteo.com/v1/forecast?' +
+    'latitude=' + lat + '&longitude=' + lon +
+    '&current=temperature_2m,weather_code';
+  var xhr = new XMLHttpRequest();
+  xhr.onload = function() {
+    try {
+      var data = JSON.parse(xhr.responseText);
+      var temp = Math.round(data.current.temperature_2m);
+      var code = wmoToCondition(data.current.weather_code);
+      Pebble.sendAppMessage({
+        'PEBBLE_WEATHER_TEMP': temp,
+        'PEBBLE_WEATHER_CODE': code
+      }, function() {
+        console.log('Weather sent: ' + temp + 'C code=' + code);
+      }, function(e) {
+        console.log('Weather send failed: ' + JSON.stringify(e));
+      });
+    } catch(e) { console.log('Weather parse error'); }
+  };
+  xhr.onerror = function() { console.log('Weather fetch error'); };
+  xhr.open('GET', url);
+  xhr.send();
+}
+
+function fetchPebbleData() {
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      fetchAndSendPebble(pos.coords.latitude, pos.coords.longitude);
+    },
+    function(err) { console.log('Geolocation error: ' + err.message); },
+    { timeout: 15000, maximumAge: 3600000 }
+  );
+}
+
 var MSG_KEY = {
   'BB':'GARMIN_BB','STR':'GARMIN_STRESS','HRV':'GARMIN_HRV','REC':'GARMIN_RECOVERY',
   'VO2':'GARMIN_VO2MAX','FTP':'GARMIN_FTP','MIN':'GARMIN_INTMIN','TLD':'GARMIN_LOAD',
@@ -455,9 +561,9 @@ var MSG_KEY = {
 
 // ── Fetch and send ────────────────────────────────────────────────────────────
 function getActiveMetrics() {
-  var defaults = ['BB', 'STR', 'HR', 'STP', 'SLP', 'HRV'];
+  var defaults = ['BB', 'STR', 'HRV'];
   var seen = {}, metrics = [];
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 3; i++) {
     var m = localStorage.getItem('garmin_slot' + i) || defaults[i] || 'NONE';
     if (m !== 'NONE' && !seen[m]) { seen[m] = true; metrics.push(m); }
   }
@@ -560,9 +666,13 @@ Pebble.addEventListener('webviewclosed', function(e) {
   var newPass = named.GarminPass ? (named.GarminPass.value || '') : prevPass;
   if (named.GarminUser) localStorage.setItem('garmin_user', newUser);
   if (named.GarminPass) localStorage.setItem('garmin_pass', newPass);
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 3; i++) {
     var sk = 'Slot' + i;
     if (named[sk]) localStorage.setItem('garmin_slot' + i, named[sk].value || 'NONE');
+  }
+  for (var j = 0; j < 3; j++) {
+    var tsk = 'TopSlot' + j;
+    if (named[tsk]) localStorage.setItem('garmin_top_slot' + j, named[tsk].value || 'DATE');
   }
   // Force re-login only if credentials changed
   if (newUser !== prevUser || newPass !== prevPass) {
@@ -582,11 +692,13 @@ Pebble.addEventListener('webviewclosed', function(e) {
 });
 
 Pebble.addEventListener('ready', function() {
+  fetchPebbleData();
   ensureLoggedIn(function(ok) { if (ok) fetchAndSend(); });
 });
 
 Pebble.addEventListener('appmessage', function(e) {
   if (e.payload['REQUEST_GARMIN']) {
+    fetchPebbleData();
     ensureLoggedIn(function(ok) { if (ok) fetchAndSend(); });
   }
 });
