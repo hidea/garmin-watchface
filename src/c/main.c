@@ -16,7 +16,7 @@
 #define DATA_KEY         2
 #define FACE_PADDING     8
 #define MAX_TOP_SLOTS    3
-#define MAX_BOT_SLOTS    3
+#define MAX_BOT_SLOTS    4
 #define SLOT_STR_LEN     8
 #define DEFAULT_INTERVAL 30
 
@@ -68,6 +68,7 @@ static Layer        *s_border_layer;
 
 static GFont         s_font_time;
 static GFont         s_font_num;
+static GFont         s_font_num_small;
 static GFont         s_font_unit;
 static GFont         s_font_label;
 
@@ -92,6 +93,7 @@ static void settings_init_defaults(void) {
   strncpy(s_settings.bot_slot[0], "BB",   SLOT_STR_LEN);
   strncpy(s_settings.bot_slot[1], "STR",  SLOT_STR_LEN);
   strncpy(s_settings.bot_slot[2], "HRV",  SLOT_STR_LEN);
+  strncpy(s_settings.bot_slot[3], "REC",  SLOT_STR_LEN);
   s_settings.interval = DEFAULT_INTERVAL;
 }
 
@@ -554,12 +556,13 @@ static void time_update_proc(Layer *layer, GContext *ctx) {
 
 static void data_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
-  int slot_w = b.size.w / 3;
+  int slot_w = b.size.w / 4;
 
   graphics_context_set_stroke_color(ctx, GColorDarkGray);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(slot_w,     0), GPoint(slot_w,     b.size.h));
   graphics_draw_line(ctx, GPoint(slot_w * 2, 0), GPoint(slot_w * 2, b.size.h));
+  graphics_draw_line(ctx, GPoint(slot_w * 3, 0), GPoint(slot_w * 3, b.size.h));
 
   char lbl[8], val[10];
   for (int i = 0; i < MAX_BOT_SLOTS; i++) {
@@ -581,9 +584,18 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
       }
     }
 
+    int digit_count = 0;
+    for (int j = 0; val[j]; j++) {
+      if (val[j] >= '0' && val[j] <= '9') digit_count++;
+    }
+    bool large = (digit_count > 4) || i == 3;
+    GFont num_font  = large ? s_font_num_small : s_font_num;
+    GFont unit_font = s_font_unit;
+    int val_y       = large ? 23 : 17;
+
     graphics_context_set_text_color(ctx, GColorWhite);
-    draw_num_with_unit(ctx, val, s_font_num, s_font_unit,
-        GRect(x + 1, 17, slot_w - 2, 28), GTextAlignmentCenter);
+    draw_num_with_unit(ctx, val, num_font, unit_font,
+        GRect(x + 1, val_y, slot_w - 2, 28), GTextAlignmentCenter);
   }
 }
 
@@ -726,6 +738,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   if (t) { strncpy(s_settings.bot_slot[1], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_Slot2);
   if (t) { strncpy(s_settings.bot_slot[2], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_Slot3);
+  if (t) { strncpy(s_settings.bot_slot[3], t->value->cstring, SLOT_STR_LEN - 1); settings_updated = true; }
 
   t = dict_find(iterator, MESSAGE_KEY_UpdateInterval);
   if (t) {
@@ -801,6 +815,7 @@ static void main_window_load(Window *window) {
 
   s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_62));
   s_font_num   = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  s_font_num_small = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   s_font_unit  = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   s_font_label = fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21);
 
