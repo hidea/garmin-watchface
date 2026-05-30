@@ -357,7 +357,7 @@ static void draw_num_with_unit(GContext *ctx, const char *val,
          (val[split] >= '0' && val[split] <= '9') || val[split] == '.')) {
     split++;
   }
-  if (val[split] == '\0') {
+  if (val[split] == '\0' || split == 0) {
     graphics_draw_text(ctx, val, font_num, rect,
         GTextOverflowModeTrailingEllipsis, align, NULL);
     return;
@@ -541,7 +541,7 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int cy = b.size.h / 2;
 
-  GColor icon_color = (s_garmin.status == 1) ? GColorGreen :
+  GColor icon_color = (s_garmin.status == 1) ? GColorBlueMoon :
                       (s_garmin.status == 2) ? GColorChromeYellow : GColorRed;
 
   // "GARMIN" (~46px) + gap(6) + icon(12) = ~64px, centered
