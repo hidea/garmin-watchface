@@ -56,7 +56,7 @@
     ],
     "resources": {
       "media": [
-        { "type": "font",   "name": "RUSSO_ONE_62", "file": "RussoOne.ttf", "characterRegex": "[0-9:]" },
+        { "type": "font",   "name": "RUSSO_ONE_70", "file": "RussoOne.ttf", "characterRegex": "[0-9:]" },
         { "type": "bitmap", "name": "METRIC_BB",  "file": "images/metric_bb.png" },
         { "type": "bitmap", "name": "METRIC_STR", "file": "images/metric_str.png" },
         { "type": "bitmap", "name": "METRIC_HRV", "file": "images/metric_hrv.png" },

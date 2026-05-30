@@ -138,7 +138,7 @@ static void format_sleep(int32_t minutes, char *buf, size_t sz) {
   if (minutes <= 0) { snprintf(buf, sz, "--"); return; }
   int h = (int)(minutes / 60);
   int m = (int)(minutes % 60);
-  if (h > 0) snprintf(buf, sz, "%dh%02d", h, m);
+  if (h > 0) snprintf(buf, sz, "%dh%dm", h, m);
   else        snprintf(buf, sz, "%dm", m);
 }
 
@@ -322,7 +322,7 @@ static uint32_t weather_pdc_id(WeatherCondition cond) {
   }
 }
 
-static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int slot_w, int lh) {
+static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int y, int slot_w, int lh) {
   if (!res_id) return;
   GDrawCommandImage *pdc = gdraw_command_image_create_with_resource(res_id);
   if (!pdc) return;
@@ -333,24 +333,25 @@ static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int slot_w, int 
   for (int i = 0; i < n; i++) {
     GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
     GColor fill = gdraw_command_get_fill_color(cmd);
-    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, GColorWhite);
-    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, GColorBlack);
+    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, GColorDarkGray);
+    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, GColorWhite);
     if (gdraw_command_get_stroke_width(cmd) > 0) {
       GColor stroke = gdraw_command_get_stroke_color(cmd);
-      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, GColorWhite);
-      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, GColorBlack);
+      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, GColorDarkGray);
+      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, GColorWhite);
     }
   }
 
   GSize sz = gdraw_command_image_get_bounds_size(pdc);
   gdraw_command_image_draw(ctx, pdc,
-      GPoint(x + (slot_w - sz.w) / 2, (lh - sz.h) / 2));
+      GPoint(x + (slot_w - sz.w) / 2, y + (lh - sz.h) / 2));
   gdraw_command_image_destroy(pdc);
 }
 
 static void draw_num_with_unit(GContext *ctx, const char *val,
                                GFont font_num, GFont font_unit,
                                GRect rect, GTextAlignment align) {
+  // 数値プレフィックスの長さを求める
   int split = 0;
   while (val[split] && (val[split] == '-' ||
          (val[split] >= '0' && val[split] <= '9') || val[split] == '.')) {
@@ -362,19 +363,42 @@ static void draw_num_with_unit(GContext *ctx, const char *val,
     return;
   }
 
-  char num_part[10], unit_part[6];
+  // 単位（非数字）部分の終端を求める
+  int unit_end = split;
+  while (val[unit_end] && !((val[unit_end] >= '0' && val[unit_end] <= '9'))) {
+    unit_end++;
+  }
+
+  char num_part[10], unit_part[6], rest_part[8];
   strncpy(num_part, val, split);
   num_part[split] = '\0';
-  strncpy(unit_part, val + split, sizeof(unit_part) - 1);
-  unit_part[sizeof(unit_part) - 1] = '\0';
+  strncpy(unit_part, val + split, unit_end - split);
+  unit_part[unit_end - split] = '\0';
+  strncpy(rest_part, val + unit_end, sizeof(rest_part) - 1);
+  rest_part[sizeof(rest_part) - 1] = '\0';
 
   GRect big = GRect(0, 0, 200, 50);
   GSize nsz = graphics_text_layout_get_content_size(num_part, font_num,
       big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
   GSize usz = graphics_text_layout_get_content_size(unit_part, font_unit,
       big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+  // rest_part も数値+単位に分割（例: "09m" → "09" + "m"）
+  char rest_num[8], rest_unit[4];
+  rest_num[0] = '\0'; rest_unit[0] = '\0';
+  if (rest_part[0]) {
+    int r = 0;
+    while (rest_part[r] && (rest_part[r] >= '0' && rest_part[r] <= '9')) r++;
+    strncpy(rest_num, rest_part, r); rest_num[r] = '\0';
+    strncpy(rest_unit, rest_part + r, sizeof(rest_unit) - 1);
+    rest_unit[sizeof(rest_unit) - 1] = '\0';
+  }
 
-  int total_w = nsz.w + usz.w;
+  GSize rnsz; rnsz.w = 0; rnsz.h = 0;
+  GSize rusz; rusz.w = 0; rusz.h = 0;
+  if (rest_num[0])  rnsz = graphics_text_layout_get_content_size(rest_num,  font_num,  big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+  if (rest_unit[0]) rusz = graphics_text_layout_get_content_size(rest_unit, font_unit, big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+
+  int total_w = nsz.w + usz.w + rnsz.w + rusz.w;
   int sx;
   if (align == GTextAlignmentCenter)
     sx = rect.origin.x + (rect.size.w - total_w) / 2;
@@ -389,6 +413,17 @@ static void draw_num_with_unit(GContext *ctx, const char *val,
   graphics_draw_text(ctx, unit_part, font_unit,
       GRect(sx + nsz.w, rect.origin.y + (nsz.h - usz.h), usz.w + 4, rect.size.h),
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  if (rest_num[0]) {
+    int rx = sx + nsz.w + usz.w;
+    graphics_draw_text(ctx, rest_num, font_num,
+        GRect(rx, rect.origin.y, rnsz.w + 4, rect.size.h),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+    if (rest_unit[0]) {
+      graphics_draw_text(ctx, rest_unit, font_unit,
+          GRect(rx + rnsz.w, rect.origin.y + (rnsz.h - rusz.h), rusz.w + 4, rect.size.h),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+    }
+  }
 }
 
 // ── Draw procs ────────────────────────────────────────────────────────────────
@@ -412,8 +447,8 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
 
     if (strcmp(key, "BAT") == 0) {
       // 上段: outdoor-typical スタイルのバッテリーバー
-      int bw = slot_w - 10, bh = 14;
-      int bx = x + 5, by = (lh - bh) / 2;
+      int bw = slot_w - 30, bh = 14;
+      int bx = x + 15, by = (lh - bh) / 2;
       graphics_context_set_stroke_color(ctx, GColorWhite);
       graphics_context_set_stroke_width(ctx, 2);
       graphics_draw_round_rect(ctx, GRect(bx, by, bw, bh), 2);
@@ -427,49 +462,44 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
       graphics_fill_rect(ctx, GRect(bx + 3, by + 3, fw, bh - 6), 0, GCornerNone);
       // 下段: %
       graphics_context_set_text_color(ctx, GColorWhite);
-      graphics_draw_text(ctx, line2, s_font_num,
-          GRect(x + 1, lh, slot_w - 2, lh),
-          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+      draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
+          GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
     } else if (strcmp(key, "HR") == 0) {
-      draw_pdc_top(ctx, RESOURCE_ID_ICON_HEART, x, slot_w, lh);
-      graphics_draw_text(ctx, line2, s_font_num,
-          GRect(x + 1, lh, slot_w - 2, lh),
-          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_HEART, x, 1, slot_w, lh);
+      draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
+          GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
     } else if (strcmp(key, "STP") == 0) {
-      draw_pdc_top(ctx, RESOURCE_ID_ICON_STEPS, x, slot_w, lh);
-      graphics_draw_text(ctx, line2, s_font_num,
-          GRect(x + 1, lh, slot_w - 2, lh),
-          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_STEPS, x, 1, slot_w, lh);
+      draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
+          GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
     } else if (strcmp(key, "SLP") == 0) {
-      draw_pdc_top(ctx, RESOURCE_ID_ICON_SLEEP, x, slot_w, lh);
-      graphics_draw_text(ctx, line2, s_font_num,
-          GRect(x + 1, lh, slot_w - 2, lh),
-          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_SLEEP, x, 1, slot_w, lh);
+      draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
+          GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
     } else if (strcmp(key, "WTH") == 0) {
-      draw_pdc_top(ctx, weather_pdc_id((WeatherCondition)s_pebble.weather_code), x, slot_w, lh);
-      graphics_draw_text(ctx, line2, s_font_num,
-          GRect(x + 1, lh, slot_w - 2, lh),
-          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
+      draw_pdc_top(ctx, weather_pdc_id((WeatherCondition)s_pebble.weather_code), x, 1, slot_w, lh);
+      draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
+          GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
     } else if (strcmp(key, "SRS") == 0) {
       graphics_draw_text(ctx, line1, s_font_num,
-          GRect(x + 1, 0, slot_w - 2, lh),
+          GRect(x - 5, 0, slot_w - 2, lh),
           GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
       graphics_draw_text(ctx, line2, s_font_num,
-          GRect(x + 1, lh, slot_w - 2, lh),
+          GRect(x - 5, lh - 6, slot_w - 2, lh),
           GTextOverflowModeTrailingEllipsis, GTextAlignmentRight, NULL);
 
     } else {
       // 標準 (DATE 等): 上=値(num) 下=ラベル(label)
       graphics_draw_text(ctx, line1, s_font_num,
-          GRect(x + 1, 0, slot_w - 2, lh),
+          GRect(x + 1, -5, slot_w - 2, lh),
           GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
       graphics_draw_text(ctx, line2, s_font_label,
-          GRect(x + 1, lh, slot_w - 2, lh),
+          GRect(x + 1, lh - 4, slot_w - 2, lh),
           GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
     }
   }
@@ -480,7 +510,7 @@ static void status_update_proc(Layer *layer, GContext *ctx) {
   int cy = b.size.h / 2;
 
   // BT(12) + gap(6) + Battery(20) = 38px, centered in layer
-  int total_w = 12 + 6 + 20;
+  int total_w = 12 + 10 + 20;
   int sx = (b.size.w - total_w) / 2;
 
   bool bt = bluetooth_connection_service_peek();
@@ -545,7 +575,7 @@ static void time_update_proc(Layer *layer, GContext *ctx) {
   GFont f = s_font_time ? s_font_time : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, s_time_buf, f,
-      GRect(-8, 0, b.size.w + 16, b.size.h),
+      GRect(-8, -4, b.size.w + 16, b.size.h),
       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   if (!s_is_24h && s_ampm_buf[0]) {
     graphics_draw_text(ctx, s_ampm_buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
@@ -813,7 +843,7 @@ static void main_window_load(Window *window) {
   GRect bounds = layer_get_bounds(wl);
   window_set_background_color(window, GColorBlack);
 
-  s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_62));
+  s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_70));
   s_font_num   = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   s_font_num_small = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
   s_font_unit  = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
