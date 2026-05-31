@@ -618,7 +618,7 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
     for (int j = 0; val[j]; j++) {
       if (val[j] >= '0' && val[j] <= '9') digit_count++;
     }
-    bool large = (digit_count > 4) || i == 3;
+    bool large = (digit_count > 4);
     GFont num_font  = large ? s_font_num_small : s_font_num;
     GFont unit_font = s_font_unit;
     int val_y       = large ? 23 : 17;
