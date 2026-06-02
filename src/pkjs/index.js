@@ -274,27 +274,11 @@ function parseValue(metric, data) {
     case 'HRV':
       if (data.hrvSummary) {
         var hs = data.hrvSummary;
-        if (hs.lastNight !== undefined && hs.lastNight > 0) return hs.lastNight;
         if (hs.weeklyAvg !== undefined && hs.weeklyAvg > 0) return hs.weeklyAvg;
-        if (hs.rmssd !== undefined) return hs.rmssd;
-        if (hs.status) {
-          var s = hs.status.toUpperCase();
-          return s==='POOR'?'Poor': s==='BALANCED'?'Bal': s==='GOOD'?'Good': s.slice(0,4);
-        }
       }
       if (Array.isArray(data) && data.length > 0) {
         var hd = data[0];
-        if (hd.hrvSummary) {
-          var hs2 = hd.hrvSummary;
-          if (hs2.lastNight !== undefined && hs2.lastNight > 0) return hs2.lastNight;
-          if (hs2.weeklyAvg !== undefined && hs2.weeklyAvg > 0) return hs2.weeklyAvg;
-          if (hs2.rmssd !== undefined) return hs2.rmssd;
-        }
-      }
-      if (data.lastNight) {
-        var ln = data.lastNight;
-        if (ln.rmssd5MinHigh !== undefined) return ln.rmssd5MinHigh;
-        if (ln.rmssd !== undefined) return ln.rmssd;
+        if (hd.hrvSummary && hd.hrvSummary.weeklyAvg > 0) return hd.hrvSummary.weeklyAvg;
       }
       return null;
     case 'REC':

@@ -29,7 +29,7 @@ typedef struct {
 typedef struct {
   int8_t  bb;
   int8_t  stress;
-  char    hrv[8];
+  int16_t hrv;
   int16_t recovery;
   int8_t  vo2max;
   int16_t ftp;
@@ -103,7 +103,7 @@ static void settings_init_defaults(void) {
 static void garmin_init_defaults(void) {
   s_garmin.bb          = -1;
   s_garmin.stress      = -1;
-  strncpy(s_garmin.hrv, "", sizeof(s_garmin.hrv));
+  s_garmin.hrv = -1;
   s_garmin.recovery    = -1;
   s_garmin.vo2max      = -1;
   s_garmin.ftp         = -1;
@@ -216,7 +216,8 @@ static void slot_get_display(const char *key,
     else snprintf(value, value_sz, "--");
   } else if (strcmp(key, "HRV") == 0) {
     snprintf(label, label_sz, "HRV");
-    snprintf(value, value_sz, "%s", s_garmin.hrv[0] ? s_garmin.hrv : "--");
+    if (s_garmin.hrv > 0) snprintf(value, value_sz, "%dms", (int)s_garmin.hrv);
+    else snprintf(value, value_sz, "--");
   } else if (strcmp(key, "REC") == 0) {
     snprintf(label, label_sz, "Recov");
     if (s_garmin.recovery >= 0) snprintf(value, value_sz, "%dh", (int)s_garmin.recovery);
@@ -649,7 +650,7 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
     for (int j = 0; val[j]; j++) {
       if (val[j] >= '0' && val[j] <= '9') digit_count++;
     }
-    bool large = (digit_count > 4);
+    bool large = (digit_count > 4) || (digit_count >= 3 && strstr(val, "ms"));
     GFont num_font  = large ? s_font_num_small : s_font_num;
     GFont unit_font = s_font_unit;
     int val_y       = large ? 23 : 17;
@@ -783,7 +784,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_STRESS);
   if (t) { s_garmin.stress = (int8_t)t->value->int32; garmin_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_HRV);
-  if (t) { strncpy(s_garmin.hrv, t->value->cstring, sizeof(s_garmin.hrv) - 1); garmin_updated = true; }
+  if (t) { s_garmin.hrv = (int16_t)t->value->int32; garmin_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_RECOVERY);
   if (t) { s_garmin.recovery = (int16_t)t->value->int32; garmin_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_VO2MAX);
