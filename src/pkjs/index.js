@@ -192,6 +192,7 @@ function endpointUrl(metric) {
   var today = todayStr();
   var urls = {
     'HR':  API_BASE + '/wellness-service/wellness/dailyHeartRate?date=' + today,
+    'RHR': API_BASE + '/wellness-service/wellness/dailyHeartRate?date=' + today,
     'SLP': API_BASE + '/wellness-service/wellness/dailySleepData?date=' + today,
     'BB':  API_BASE + '/wellness-service/wellness/bodyBattery/reports/daily?startDate=' + today + '&endDate=' + today,
     'STR': API_BASE + '/wellness-service/wellness/dailyStress/' + today,
@@ -348,13 +349,15 @@ function parseValue(metric, data) {
       if (data.acuteLoad !== undefined) return Math.round(data.acuteLoad);
       return null;
     case 'HR':
-      if (data.restingHeartRate !== undefined && data.restingHeartRate > 0) return data.restingHeartRate;
-      if (data.lastMeasurement !== undefined) return data.lastMeasurement;
+      if (data.lastMeasurement !== undefined && data.lastMeasurement > 0) return data.lastMeasurement;
       if (data.heartRateValues) {
         for (var j = data.heartRateValues.length - 1; j >= 0; j--) {
           if (data.heartRateValues[j] && data.heartRateValues[j][1] > 0) return data.heartRateValues[j][1];
         }
       }
+      return null;
+    case 'RHR':
+      if (data.restingHeartRate !== undefined && data.restingHeartRate > 0) return data.restingHeartRate;
       return null;
     case 'STP':
       if (Array.isArray(data)) {
@@ -555,15 +558,15 @@ function fetchPebbleData() {
 var MSG_KEY = {
   'BB':'GARMIN_BB','STR':'GARMIN_STRESS','HRV':'GARMIN_HRV','REC':'GARMIN_RECOVERY',
   'VO2':'GARMIN_VO2MAX','FTP':'GARMIN_FTP','MIN':'GARMIN_INTMIN','TLD':'GARMIN_LOAD',
-  'HR':'GARMIN_HR','STP':'GARMIN_STEPS','SLP':'GARMIN_SLEEP','SCH':'GARMIN_COACH','O2':'GARMIN_SPO2',
+  'HR':'GARMIN_HR','RHR':'GARMIN_RHR','STP':'GARMIN_STEPS','SLP':'GARMIN_SLEEP','SCH':'GARMIN_COACH','O2':'GARMIN_SPO2',
   'RSP':'GARMIN_RSP','HEA':'GARMIN_HEAT','ALT':'GARMIN_ALTACL','TST':'GARMIN_TSTATUS','TRD':'GARMIN_TREADY'
 };
 
 // ── Fetch and send ────────────────────────────────────────────────────────────
 function getActiveMetrics() {
-  var defaults = ['BB', 'STR', 'HRV'];
+  var defaults = ['BB', 'STR', 'HRV', 'REC'];
   var seen = {}, metrics = [];
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 4; i++) {
     var m = localStorage.getItem('garmin_slot' + i) || defaults[i] || 'NONE';
     if (m !== 'NONE' && !seen[m]) { seen[m] = true; metrics.push(m); }
   }
@@ -666,7 +669,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
   var newPass = named.GarminPass ? (named.GarminPass.value || '') : prevPass;
   if (named.GarminUser) localStorage.setItem('garmin_user', newUser);
   if (named.GarminPass) localStorage.setItem('garmin_pass', newPass);
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 4; i++) {
     var sk = 'Slot' + i;
     if (named[sk]) localStorage.setItem('garmin_slot' + i, named[sk].value || 'NONE');
   }

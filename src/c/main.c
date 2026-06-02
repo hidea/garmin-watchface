@@ -36,6 +36,7 @@ typedef struct {
   int16_t intmin;
   int16_t load;
   int8_t  hr;
+  int8_t  rhr;
   int16_t steps;
   int8_t  sleep_score;
   char    coach[8];
@@ -50,6 +51,7 @@ typedef struct {
 
 typedef struct {
   int16_t  heart_rate;
+  int16_t  resting_hr;
   int32_t  steps;
   int32_t  sleep_minutes;
   int8_t   weather_temp;
@@ -69,6 +71,7 @@ static Layer        *s_border_layer;
 static GFont         s_font_time;
 static GFont         s_font_num;
 static GFont         s_font_num_small;
+static GFont         s_font_num_large;
 static GFont         s_font_unit;
 static GFont         s_font_label;
 
@@ -107,6 +110,7 @@ static void garmin_init_defaults(void) {
   s_garmin.intmin      = -1;
   s_garmin.load        = -1;
   s_garmin.hr          = -1;
+  s_garmin.rhr         = -1;
   s_garmin.steps       = -1;
   s_garmin.sleep_score = -1;
   strncpy(s_garmin.coach, "", sizeof(s_garmin.coach));
@@ -123,6 +127,7 @@ static void pebble_init_defaults(void) {
   s_pebble.heart_rate    = -1;
   s_pebble.steps         = -1;
   s_pebble.sleep_minutes = -1;
+  s_pebble.resting_hr    = -1;
   s_pebble.weather_temp  = -99;
   s_pebble.weather_code  = -1;
   s_pebble.sunrise       = 0;
@@ -170,6 +175,10 @@ static void top_slot_get_lines(const char *key,
     snprintf(line1, l1sz, "HR");
     if (s_pebble.heart_rate > 0) snprintf(line2, l2sz, "%d", (int)s_pebble.heart_rate);
     else snprintf(line2, l2sz, "--");
+  } else if (strcmp(key, "RHR") == 0) {
+    snprintf(line1, l1sz, "RHR");
+    if (s_pebble.resting_hr > 0) snprintf(line2, l2sz, "%d", (int)s_pebble.resting_hr);
+    else snprintf(line2, l2sz, "--");
   } else if (strcmp(key, "STP") == 0) {
     snprintf(line1, l1sz, "Steps");
     if (s_pebble.steps >= 0) {
@@ -186,7 +195,7 @@ static void top_slot_get_lines(const char *key,
     format_sun_time(s_pebble.sunset,  line2, l2sz);
   } else if (strcmp(key, "WTH") == 0) {
     snprintf(line1, l1sz, "%s", weather_condition(s_pebble.weather_code));
-    if (s_pebble.weather_temp != -99) snprintf(line2, l2sz, "%dC", (int)s_pebble.weather_temp);
+    if (s_pebble.weather_temp != -99) snprintf(line2, l2sz, "%d\xc2\xb0", (int)s_pebble.weather_temp);
     else snprintf(line2, l2sz, "--");
   } else {
     snprintf(line1, l1sz, "---");
@@ -231,6 +240,10 @@ static void slot_get_display(const char *key,
   } else if (strcmp(key, "HR") == 0) {
     snprintf(label, label_sz, "HR");
     if (s_garmin.hr > 0) snprintf(value, value_sz, "%d", (int)s_garmin.hr);
+    else snprintf(value, value_sz, "--");
+  } else if (strcmp(key, "RHR") == 0) {
+    snprintf(label, label_sz, "RHR");
+    if (s_garmin.rhr > 0) snprintf(value, value_sz, "%d", (int)s_garmin.rhr);
     else snprintf(value, value_sz, "--");
   } else if (strcmp(key, "STP") == 0) {
     snprintf(label, label_sz, "Steps");
@@ -282,6 +295,7 @@ static uint32_t slot_get_resource_id(const char *key) {
   if (strcmp(key, "MIN") == 0) return RESOURCE_ID_METRIC_MIN;
   if (strcmp(key, "TLD") == 0) return RESOURCE_ID_METRIC_TLD;
   if (strcmp(key, "HR")  == 0) return RESOURCE_ID_METRIC_HR;
+  if (strcmp(key, "RHR") == 0) return RESOURCE_ID_METRIC_HR;
   if (strcmp(key, "STP") == 0) return RESOURCE_ID_METRIC_STP;
   if (strcmp(key, "SLP") == 0) return RESOURCE_ID_METRIC_SLP;
   if (strcmp(key, "SCH") == 0) return RESOURCE_ID_METRIC_SCH;
@@ -333,12 +347,12 @@ static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int y, int slot_
   for (int i = 0; i < n; i++) {
     GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
     GColor fill = gdraw_command_get_fill_color(cmd);
-    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, GColorDarkGray);
-    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, GColorWhite);
+    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, GColorWhite);
+    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, GColorDarkGray);
     if (gdraw_command_get_stroke_width(cmd) > 0) {
       GColor stroke = gdraw_command_get_stroke_color(cmd);
-      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, GColorDarkGray);
-      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, GColorWhite);
+      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, GColorWhite);
+      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, GColorDarkGray);
     }
   }
 
@@ -470,6 +484,22 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
       draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
           GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
+    } else if (strcmp(key, "RHR") == 0) {
+      draw_pdc_top(ctx, RESOURCE_ID_ICON_HEART, x, 1, slot_w, lh);
+      {
+        GRect trect = GRect(x + 1, lh - 6, slot_w - 2, lh);
+        GRect big = GRect(0, 0, 200, 50);
+        GSize vsz = graphics_text_layout_get_content_size(line2, s_font_num, big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+        int vx = trect.origin.x + (trect.size.w - vsz.w) / 2;
+        graphics_draw_text(ctx, line2, s_font_num,
+            GRect(vx, trect.origin.y, vsz.w + 4, trect.size.h),
+            GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+        graphics_context_set_stroke_color(ctx, GColorWhite);
+        graphics_context_set_stroke_width(ctx, 1);
+        graphics_draw_line(ctx, GPoint(vx, trect.origin.y + vsz.h + 2),
+                                GPoint(vx + vsz.w, trect.origin.y + vsz.h + 2));
+      }
+
     } else if (strcmp(key, "STP") == 0) {
       draw_pdc_top(ctx, RESOURCE_ID_ICON_STEPS, x, 1, slot_w, lh);
       draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
@@ -482,8 +512,9 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
 
     } else if (strcmp(key, "WTH") == 0) {
       draw_pdc_top(ctx, weather_pdc_id((WeatherCondition)s_pebble.weather_code), x, 1, slot_w, lh);
-      draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
-          GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
+      graphics_draw_text(ctx, line2, s_font_num,
+          GRect(x + 1, lh - 6, slot_w - 2, lh),
+          GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
 
     } else if (strcmp(key, "SRS") == 0) {
       graphics_draw_text(ctx, line1, s_font_num,
@@ -626,6 +657,15 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_text_color(ctx, GColorWhite);
     draw_num_with_unit(ctx, val, num_font, unit_font,
         GRect(x + 1, val_y, slot_w - 2, 28), GTextAlignmentCenter);
+    if (strcmp(key, "RHR") == 0) {
+      GRect big = GRect(0, 0, 200, 50);
+      GSize vsz = graphics_text_layout_get_content_size(val, num_font, big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+      int vx = x + 1 + (slot_w - 2 - vsz.w) / 2;
+      graphics_context_set_stroke_color(ctx, GColorWhite);
+      graphics_context_set_stroke_width(ctx, 1);
+      graphics_draw_line(ctx, GPoint(vx, val_y + vsz.h + 2),
+                              GPoint(vx + vsz.w, val_y + vsz.h + 2));
+    }
   }
 }
 
@@ -650,12 +690,49 @@ static void bluetooth_callback(bool connected) {
 }
 
 #if defined(PBL_HEALTH)
+#define RHR_MAX_MINUTES   480
+#define RHR_MIN_READINGS   10
+#define RHR_LOWEST_COUNT    5
+#define RHR_VMC_THRESHOLD  50
+
+static HealthMinuteData s_rhr_buf[RHR_MAX_MINUTES];
+
+static int16_t calculate_rhr(void) {
+  time_t today_start = time_start_of_today();
+  time_t win_start = today_start - (3 * SECONDS_PER_HOUR);  // 昨日21時
+  time_t win_end   = today_start + (9 * SECONDS_PER_HOUR);  // 今日09時
+  if (win_end > time(NULL)) win_end = time(NULL);
+
+  uint32_t count = health_service_get_minute_history(s_rhr_buf, RHR_MAX_MINUTES, &win_start, &win_end);
+
+  uint8_t readings[RHR_MAX_MINUTES];
+  int n = 0;
+  for (uint32_t i = 0; i < count && n < RHR_MAX_MINUTES; i++) {
+    HealthMinuteData *m = &s_rhr_buf[i];
+    if (m->is_invalid || m->heart_rate_bpm == 0) continue;
+    if (m->steps > 0 || m->vmc > RHR_VMC_THRESHOLD) continue;
+    readings[n++] = m->heart_rate_bpm;
+  }
+  if (n < RHR_MIN_READINGS) return -1;
+
+  // バブルソートで昇順
+  for (int i = 0; i < n - 1; i++)
+    for (int j = 0; j < n - i - 1; j++)
+      if (readings[j] > readings[j+1]) { uint8_t t = readings[j]; readings[j] = readings[j+1]; readings[j+1] = t; }
+
+  int take = n < RHR_LOWEST_COUNT ? n : RHR_LOWEST_COUNT;
+  int sum = 0;
+  for (int i = 0; i < take; i++) sum += readings[i];
+  return (int16_t)(sum / take);
+}
+
 static void health_handler(HealthEventType event, void *context) {
   bool changed = false;
   if (event == HealthEventHeartRateUpdate || event == HealthEventMovementUpdate) {
     HealthValue hr = health_service_peek_current_value(HealthMetricHeartRateBPM);
     s_pebble.heart_rate = (hr > 0) ? (int16_t)hr : -1;
     time_t start = time_start_of_today();
+    s_pebble.resting_hr = calculate_rhr();
     HealthValue steps = health_service_sum(HealthMetricStepCount, start, time(NULL));
     s_pebble.steps = (int32_t)steps;
     changed = true;
@@ -673,6 +750,7 @@ static void health_init(void) {
   HealthValue hr = health_service_peek_current_value(HealthMetricHeartRateBPM);
   s_pebble.heart_rate = (hr > 0) ? (int16_t)hr : -1;
   time_t start = time_start_of_today();
+  s_pebble.resting_hr = calculate_rhr();
   HealthValue steps = health_service_sum(HealthMetricStepCount, start, time(NULL));
   s_pebble.steps = (int32_t)steps;
   HealthValue sleep = health_service_sum(HealthMetricSleepSeconds, start, time(NULL));
@@ -718,6 +796,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   if (t) { s_garmin.load = (int16_t)t->value->int32; garmin_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_HR);
   if (t) { s_garmin.hr = (int8_t)t->value->int32; garmin_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_GARMIN_RHR);
+  if (t) { s_garmin.rhr = (int8_t)t->value->int32; garmin_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_STEPS);
   if (t) { s_garmin.steps = (int16_t)t->value->int32; garmin_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_SLEEP);
@@ -740,6 +820,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   // Pebble native data from JS
   t = dict_find(iterator, MESSAGE_KEY_PEBBLE_HEART_RATE);
   if (t) { s_pebble.heart_rate = (int16_t)t->value->int32; pebble_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_PEBBLE_RHR);
+  if (t) { s_pebble.resting_hr = (int16_t)t->value->int32; pebble_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_PEBBLE_STEPS);
   if (t) { s_pebble.steps = (int32_t)t->value->int32; pebble_updated = true; }
   t = dict_find(iterator, MESSAGE_KEY_PEBBLE_SLEEP);
@@ -846,6 +928,7 @@ static void main_window_load(Window *window) {
   s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_70));
   s_font_num   = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
   s_font_num_small = fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD);
+  s_font_num_large = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
   s_font_unit  = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
   s_font_label = fonts_get_system_font(FONT_KEY_ROBOTO_CONDENSED_21);
 
