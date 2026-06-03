@@ -2,19 +2,29 @@
   "name": "garmin-watchface",
   "author": "hidea",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": [
+    "pebble-app"
+  ],
   "private": true,
   "dependencies": {
     "@rebble/clay": "^1.0.8"
   },
   "pebble": {
-    "displayName": "Garmin Fitness",
+    "displayName": "Typical Garmin Fitness",
     "uuid": "9aad80d1-b4f7-4b8c-9816-12770be7cfaa",
     "sdkVersion": "3",
     "enableMultiJS": true,
-    "targetPlatforms": ["emery"],
-    "watchapp": { "watchface": true },
-    "capabilities": ["configurable"],
+    "targetPlatforms": [
+      "emery"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "capabilities": [
+      "configurable",
+      "health",
+      "location"
+    ],
     "messageKeys": [
       "REQUEST_GARMIN",
       "GARMIN_STATUS",
@@ -58,49 +68,222 @@
     ],
     "resources": {
       "media": [
-        { "type": "font",   "name": "RUSSO_ONE_70", "file": "RussoOne.ttf", "characterRegex": "[0-9:]" },
-        { "type": "bitmap", "name": "METRIC_BB",  "file": "images/metric_bb.png" },
-        { "type": "bitmap", "name": "METRIC_STR", "file": "images/metric_str.png" },
-        { "type": "bitmap", "name": "METRIC_HRV", "file": "images/metric_hrv.png" },
-        { "type": "bitmap", "name": "METRIC_REC", "file": "images/metric_rec.png" },
-        { "type": "bitmap", "name": "METRIC_VO2", "file": "images/metric_vo2.png" },
-        { "type": "bitmap", "name": "METRIC_FTP", "file": "images/metric_ftp.png" },
-        { "type": "bitmap", "name": "METRIC_MIN", "file": "images/metric_min.png" },
-        { "type": "bitmap", "name": "METRIC_TLD", "file": "images/metric_tld.png" },
-        { "type": "bitmap", "name": "METRIC_HR",  "file": "images/metric_hr.png" },
-        { "type": "bitmap", "name": "METRIC_STP", "file": "images/metric_stp.png" },
-        { "type": "bitmap", "name": "METRIC_SLP", "file": "images/metric_slp.png" },
-        { "type": "bitmap", "name": "METRIC_SCH", "file": "images/metric_sch.png" },
-        { "type": "bitmap", "name": "METRIC_O2",  "file": "images/metric_o2.png" },
-        { "type": "bitmap", "name": "METRIC_RSP", "file": "images/metric_rsp.png" },
-        { "type": "bitmap", "name": "METRIC_HEA", "file": "images/metric_hea.png" },
-        { "type": "bitmap", "name": "METRIC_ALT", "file": "images/metric_alt.png" },
-        { "type": "bitmap", "name": "METRIC_TST", "file": "images/metric_tst.png" },
-        { "type": "bitmap", "name": "METRIC_TRD",        "file": "images/metric_trd.png" },
-        { "type": "bitmap", "name": "GARMIN_STATUS",    "file": "images/garmin_status.png" },
-        { "type": "raw", "name": "ICON_HEART",  "file": "data/HEALTH_HEART.pdc" },
-        { "type": "raw", "name": "ICON_STEPS",  "file": "data/HEALTH_STEPS.pdc" },
-        { "type": "raw", "name": "ICON_SLEEP",  "file": "data/HEALTH_SLEEP.pdc" },
-        { "type": "raw", "name": "WEATHER_CLEAR_DAY",      "file": "data/CLEAR_DAY.pdc" },
-        { "type": "raw", "name": "WEATHER_PARTLY_CLOUDY",  "file": "data/PARTLY_CLOUDY.pdc" },
-        { "type": "raw", "name": "WEATHER_CLOUDY",         "file": "data/CLOUDY_DAY.pdc" },
-        { "type": "raw", "name": "WEATHER_LIGHT_RAIN",     "file": "data/LIGHT_RAIN.pdc" },
-        { "type": "raw", "name": "WEATHER_HEAVY_RAIN",     "file": "data/HEAVY_RAIN.pdc" },
-        { "type": "raw", "name": "WEATHER_LIGHT_SNOW",     "file": "data/LIGHT_SNOW.pdc" },
-        { "type": "raw", "name": "WEATHER_HEAVY_SNOW",     "file": "data/HEAVY_SNOW.pdc" },
-        { "type": "raw", "name": "WEATHER_RAINING_SNOWING","file": "data/RAINING_AND_SNOWING.pdc" },
-        { "type": "raw", "name": "WEATHER_THUNDERSTORM",   "file": "data/THUNDERSTORM.pdc" },
-        { "type": "raw", "name": "WEATHER_GENERIC",        "file": "data/WEATHER_GENERIC.pdc" },
-        { "type": "bitmap", "name": "BT_CONNECTED",    "file": "images/bt_connected.png" },
-        { "type": "bitmap", "name": "BT_DISCONNECTED", "file": "images/bt_disconnected.png" },
-        { "type": "bitmap", "name": "BAT_0", "file": "images/bat_0.png" },
-        { "type": "bitmap", "name": "BAT_1", "file": "images/bat_1.png" },
-        { "type": "bitmap", "name": "BAT_2", "file": "images/bat_2.png" },
-        { "type": "bitmap", "name": "BAT_3", "file": "images/bat_3.png" },
-        { "type": "bitmap", "name": "BAT_4", "file": "images/bat_4.png" },
-        { "type": "bitmap", "name": "BAT_5", "file": "images/bat_5.png" },
-        { "type": "bitmap", "name": "BAT_6", "file": "images/bat_6.png" },
-        { "type": "bitmap", "name": "BAT_7", "file": "images/bat_7.png" }
+        {
+          "type": "font",
+          "name": "RUSSO_ONE_70",
+          "file": "RussoOne.ttf",
+          "characterRegex": "[0-9:]"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_BB",
+          "file": "images/metric_bb.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_STR",
+          "file": "images/metric_str.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_HRV",
+          "file": "images/metric_hrv.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_REC",
+          "file": "images/metric_rec.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_VO2",
+          "file": "images/metric_vo2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_FTP",
+          "file": "images/metric_ftp.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_MIN",
+          "file": "images/metric_min.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_TLD",
+          "file": "images/metric_tld.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_HR",
+          "file": "images/metric_hr.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_STP",
+          "file": "images/metric_stp.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_SLP",
+          "file": "images/metric_slp.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_SCH",
+          "file": "images/metric_sch.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_O2",
+          "file": "images/metric_o2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_RSP",
+          "file": "images/metric_rsp.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_HEA",
+          "file": "images/metric_hea.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_ALT",
+          "file": "images/metric_alt.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_TST",
+          "file": "images/metric_tst.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "METRIC_TRD",
+          "file": "images/metric_trd.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "GARMIN_STATUS",
+          "file": "images/garmin_status.png"
+        },
+        {
+          "type": "raw",
+          "name": "ICON_HEART",
+          "file": "data/HEALTH_HEART.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "ICON_STEPS",
+          "file": "data/HEALTH_STEPS.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "ICON_SLEEP",
+          "file": "data/HEALTH_SLEEP.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_CLEAR_DAY",
+          "file": "data/CLEAR_DAY.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_PARTLY_CLOUDY",
+          "file": "data/PARTLY_CLOUDY.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_CLOUDY",
+          "file": "data/CLOUDY_DAY.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_LIGHT_RAIN",
+          "file": "data/LIGHT_RAIN.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_HEAVY_RAIN",
+          "file": "data/HEAVY_RAIN.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_LIGHT_SNOW",
+          "file": "data/LIGHT_SNOW.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_HEAVY_SNOW",
+          "file": "data/HEAVY_SNOW.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_RAINING_SNOWING",
+          "file": "data/RAINING_AND_SNOWING.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_THUNDERSTORM",
+          "file": "data/THUNDERSTORM.pdc"
+        },
+        {
+          "type": "raw",
+          "name": "WEATHER_GENERIC",
+          "file": "data/WEATHER_GENERIC.pdc"
+        },
+        {
+          "type": "bitmap",
+          "name": "BT_CONNECTED",
+          "file": "images/bt_connected.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BT_DISCONNECTED",
+          "file": "images/bt_disconnected.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_0",
+          "file": "images/bat_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_1",
+          "file": "images/bat_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_2",
+          "file": "images/bat_2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_3",
+          "file": "images/bat_3.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_4",
+          "file": "images/bat_4.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_5",
+          "file": "images/bat_5.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_6",
+          "file": "images/bat_6.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "BAT_7",
+          "file": "images/bat_7.png"
+        }
       ]
     }
   }

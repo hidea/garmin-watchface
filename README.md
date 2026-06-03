@@ -1,6 +1,6 @@
 # Garmin Fitness Face
 
-A Pebble watchface for Pebble Time Round (emery) that displays real-time fitness data fetched from Garmin Connect.
+A Pebble watchface for Pebble Time 2 that displays fitness data fetched from Garmin Connect.
 
 ![screenshot](screenshot_emery.jpeg)
 
@@ -10,7 +10,8 @@ A Pebble watchface for Pebble Time Round (emery) that displays real-time fitness
 - Date and day of week
 - Pebble battery bar with percentage
 - Garmin Connect connection status indicator
-- 6 configurable data slots showing metrics from Garmin Connect
+- 3 configurable top slots for Pebble native metrics (date, battery, heart rate, steps, sleep, weather, etc.)
+- 4 configurable bottom slots for Garmin Connect metrics
 
 ## Available Metrics
 
@@ -37,7 +38,7 @@ A Pebble watchface for Pebble Time Round (emery) that displays real-time fitness
 
 ## Requirements
 
-- Pebble Time Round (emery platform)
+- Pebble Time 2
 - [Rebble](https://rebble.io/) account (for app store / phone app)
 - Garmin Connect account
 - Garmin device synced to Garmin Connect
