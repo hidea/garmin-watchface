@@ -901,8 +901,7 @@ static void update_time(struct tm *t) {
 }
 
 static void update_date(struct tm *t) {
-  strftime(s_date_buf, sizeof(s_date_buf), "%m/%d", t);
-  if (s_date_buf[0] == '0') memmove(s_date_buf, s_date_buf + 1, strlen(s_date_buf));
+  snprintf(s_date_buf, sizeof(s_date_buf), "%d/%d", t->tm_mon + 1, t->tm_mday);
   strftime(s_day_buf, sizeof(s_day_buf), "%a", t);
   for (int i = 0; s_day_buf[i]; i++) {
     if (s_day_buf[i] >= 'a' && s_day_buf[i] <= 'z') s_day_buf[i] -= 32;
