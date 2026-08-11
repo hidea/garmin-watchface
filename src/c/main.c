@@ -14,6 +14,7 @@
 
 #define SETTINGS_KEY     1
 #define DATA_KEY         2
+#define SYNC_TIME_KEY    3
 #define FACE_PADDING     8
 #define MAX_TOP_SLOTS    3
 #define MAX_BOT_SLOTS    4
@@ -25,6 +26,13 @@ typedef struct {
   char    bot_slot[MAX_BOT_SLOTS][SLOT_STR_LEN];
   uint8_t interval;
 } WatchSettings;
+
+// Values sent in GARMIN_STATUS and stored in GarminData.status.
+typedef enum {
+  GARMIN_STATUS_ERROR   = 0, // Not configured, authentication failed, or unavailable (red)
+  GARMIN_STATUS_READY   = 1, // Idle; the latest request has completed (blue)
+  GARMIN_STATUS_SYNCING = 2, // Fetching Garmin data (yellow)
+} GarminStatus;
 
 typedef struct {
   int8_t  bb;
@@ -41,7 +49,7 @@ typedef struct {
   int8_t  sleep_score;
   char    coach[8];
   int8_t  spo2;
-  int8_t  status;
+  int8_t  status; // GarminStatus
   int8_t  respiration;
   int8_t  heat_acclim;
   int8_t  alt_acclim;
@@ -80,6 +88,7 @@ static bool          s_is_24h        = true;
 static WatchSettings s_settings;
 static GarminData    s_garmin;
 static PebbleData    s_pebble;
+static time_t        s_garmin_sync_time;
 
 static char s_time_buf[8];
 static char s_ampm_buf[3];
@@ -115,7 +124,7 @@ static void garmin_init_defaults(void) {
   s_garmin.sleep_score = -1;
   strncpy(s_garmin.coach, "", sizeof(s_garmin.coach));
   s_garmin.spo2        = -1;
-  s_garmin.status      = 0;
+  s_garmin.status      = GARMIN_STATUS_ERROR;
   s_garmin.respiration = -1;
   s_garmin.heat_acclim = -1;
   s_garmin.alt_acclim  = -1;
@@ -573,12 +582,38 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int cy = b.size.h / 2;
 
-  GColor icon_color = (s_garmin.status == 1) ? GColorBlueMoon :
-                      (s_garmin.status == 2) ? GColorChromeYellow : GColorRed;
+  GColor icon_color = (s_garmin.status == GARMIN_STATUS_READY) ? GColorBlueMoon :
+                      (s_garmin.status == GARMIN_STATUS_SYNCING) ? GColorChromeYellow : GColorRed;
 
-  // "GARMIN" (~46px) + gap(6) + icon(12) = ~64px, centered
+  char elapsed[12] = "no sync";
+  bool has_sync_time = s_garmin_sync_time > 0;
+  bool is_syncing = s_garmin.status == GARMIN_STATUS_SYNCING;
+  if (is_syncing) {
+    snprintf(elapsed, sizeof(elapsed), "syncing");
+  } else if (has_sync_time) {
+    time_t now = time(NULL);
+    int32_t minutes = (now > s_garmin_sync_time) ?
+        (int32_t)((now - s_garmin_sync_time) / 60) : 0;
+    if (minutes < 60) {
+      snprintf(elapsed, sizeof(elapsed), "%ldm", (long)minutes);
+    } else if (minutes < 6000) {
+      snprintf(elapsed, sizeof(elapsed), "%ldh%ldm",
+          (long)(minutes / 60), (long)(minutes % 60));
+    } else {
+      snprintf(elapsed, sizeof(elapsed), "99h+");
+    }
+  }
+
   int text_w = 42, gap = 1, icon_sz = 12;
-  int sx = (b.size.w - text_w - gap - icon_sz) / 2;
+  int sync_gap = 7, sync_icon_sz = 12;
+  GFont sync_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+  GSize elapsed_size = graphics_text_layout_get_content_size(
+      elapsed, sync_font, GRect(0, 0, 48, 14),
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
+  bool show_sync_icon = is_syncing || has_sync_time;
+  int sync_mark_w = show_sync_icon ? sync_icon_sz + 2 : 0;
+  int total_w = text_w + gap + icon_sz + sync_gap + sync_mark_w + elapsed_size.w;
+  int sx = (b.size.w - total_w) / 2;
 
   graphics_context_set_text_color(ctx, GColorWhite);
   graphics_draw_text(ctx, "GARMIN", fonts_get_system_font(FONT_KEY_GOTHIC_14),
@@ -600,6 +635,23 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
     graphics_draw_bitmap_in_rect(ctx, icon, GRect(ix, iy, icon_sz, icon_sz));
     gbitmap_destroy(icon);
   }
+
+  int sync_x = ix + icon_sz + sync_gap;
+  if (show_sync_icon) {
+    int sync_y = cy - sync_icon_sz / 2;
+    GBitmap *sync_icon = gbitmap_create_with_resource(RESOURCE_ID_SYNC);
+    if (sync_icon) {
+      graphics_context_set_compositing_mode(ctx, GCompOpSet);
+      graphics_draw_bitmap_in_rect(ctx, sync_icon,
+          GRect(sync_x, sync_y, sync_icon_sz, sync_icon_sz));
+      gbitmap_destroy(sync_icon);
+    }
+  }
+
+  graphics_context_set_text_color(ctx, GColorLightGray);
+  graphics_draw_text(ctx, elapsed, sync_font,
+      GRect(sync_x + sync_mark_w, -2, elapsed_size.w + 2, 14),
+      GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
 static void time_update_proc(Layer *layer, GContext *ctx) {
@@ -777,6 +829,12 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   // Garmin status
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_STATUS);
   if (t) { s_garmin.status = (int8_t)t->value->int32; garmin_updated = true; }
+  t = dict_find(iterator, MESSAGE_KEY_GARMIN_SYNC_TIME);
+  if (t) {
+    s_garmin_sync_time = (time_t)t->value->int32;
+    persist_write_int(SYNC_TIME_KEY, (int32_t)s_garmin_sync_time);
+    garmin_updated = true;
+  }
 
   // Garmin data
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_BB);
@@ -912,6 +970,7 @@ static void update_date(struct tm *t) {
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   update_time(tick_time);
   update_date(tick_time);
+  if (s_garmin_status_layer) layer_mark_dirty(s_garmin_status_layer);
   int iv = (s_settings.interval > 0) ? s_settings.interval : DEFAULT_INTERVAL;
   if (tick_time->tm_min % iv == 0) {
     request_garmin_data();
@@ -969,6 +1028,9 @@ static void main_window_load(Window *window) {
   }
   if (persist_exists(DATA_KEY)) {
     persist_read_data(DATA_KEY, &s_garmin, sizeof(GarminData));
+  }
+  if (persist_exists(SYNC_TIME_KEY)) {
+    s_garmin_sync_time = (time_t)persist_read_int(SYNC_TIME_KEY);
   }
 
   snprintf(s_bat_buf, sizeof(s_bat_buf), "%d%%", s_battery_level);

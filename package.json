@@ -28,6 +28,7 @@
     "messageKeys": [
       "REQUEST_GARMIN",
       "GARMIN_STATUS",
+      "GARMIN_SYNC_TIME",
       "GARMIN_BB",
       "GARMIN_STRESS",
       "GARMIN_HRV",
@@ -168,6 +169,11 @@
           "type": "bitmap",
           "name": "GARMIN_STATUS",
           "file": "images/garmin_status.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "SYNC",
+          "file": "images/sync.png"
         },
         {
           "type": "raw",

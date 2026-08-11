@@ -589,10 +589,15 @@ function fetchAndSend() {
 
 function sendResults(results) {
   var dict = {'GARMIN_STATUS': 1};
+  var hasData = false;
   Object.keys(results).forEach(function(m) {
     var key = MSG_KEY[m], val = results[m];
-    if (key && val !== null && val !== undefined) dict[key] = val;
+    if (key && val !== null && val !== undefined) {
+      dict[key] = val;
+      hasData = true;
+    }
   });
+  if (hasData) dict.GARMIN_SYNC_TIME = Math.floor(Date.now() / 1000);
   console.log('Sending: ' + JSON.stringify(dict));
   Pebble.sendAppMessage(dict,
     function() { console.log('Garmin data sent'); },
