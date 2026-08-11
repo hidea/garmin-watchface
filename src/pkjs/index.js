@@ -2,6 +2,16 @@ var Clay = require('@rebble/clay');
 var clayConfig = require('./config');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 
+var COLOR_THEME_KEY = 'colorTheme';
+var COLOR_REVERSE_KEY = 'colorReverse';
+
+function sendColorSettings() {
+  Pebble.sendAppMessage({
+    'COLOR_THEME': parseInt(localStorage.getItem(COLOR_THEME_KEY) || '0', 10),
+    'COLOR_REVERSE': localStorage.getItem(COLOR_REVERSE_KEY) === '1' ? 1 : 0
+  });
+}
+
 // ── Session state ─────────────────────────────────────────────────────────────
 var session = {
   pending: false,
@@ -666,6 +676,12 @@ Pebble.addEventListener('webviewclosed', function(e) {
     var tsk = 'TopSlot' + j;
     if (named[tsk]) localStorage.setItem('garmin_top_slot' + j, named[tsk].value || 'DATE');
   }
+  if (named.COLOR_THEME) {
+    localStorage.setItem(COLOR_THEME_KEY, String(named.COLOR_THEME.value));
+  }
+  if (named.COLOR_REVERSE) {
+    localStorage.setItem(COLOR_REVERSE_KEY, named.COLOR_REVERSE.value ? '1' : '0');
+  }
   // Force re-login only if credentials changed
   if (newUser !== prevUser || newPass !== prevPass) {
     session.token = '';
@@ -684,6 +700,7 @@ Pebble.addEventListener('webviewclosed', function(e) {
 });
 
 Pebble.addEventListener('ready', function() {
+  sendColorSettings();
   fetchPebbleData();
   ensureLoggedIn(function(ok) { if (ok) fetchAndSend(); });
 });

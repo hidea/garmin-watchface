@@ -47,6 +47,32 @@ module.exports = [
   {
     type: "section",
     items: [
+      { type: "heading", defaultValue: "Watchface Color" },
+      {
+        type: "select",
+        messageKey: "COLOR_THEME",
+        label: "Color Theme",
+        defaultValue: 0,
+        options: [
+          { label: "Graphite", value: 0 },
+          { label: "Blueberry", value: 1 },
+          { label: "Grape", value: 2 },
+          { label: "Tangerine", value: 3 },
+          { label: "Lime", value: 4 },
+          { label: "Strawberry", value: 5 },
+        ],
+      },
+      {
+        type: "toggle",
+        messageKey: "COLOR_REVERSE",
+        label: "Reverse",
+        defaultValue: false,
+      },
+    ],
+  },
+  {
+    type: "section",
+    items: [
       { type: "heading", defaultValue: "Top Section (Pebble)" },
       {
         type: "select",

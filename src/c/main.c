@@ -15,6 +15,8 @@
 #define SETTINGS_KEY     1
 #define DATA_KEY         2
 #define SYNC_TIME_KEY    3
+#define THEME_KEY        4
+#define REVERSE_KEY      5
 #define FACE_PADDING     8
 #define MAX_TOP_SLOTS    3
 #define MAX_BOT_SLOTS    4
@@ -33,6 +35,23 @@ typedef enum {
   GARMIN_STATUS_READY   = 1, // Idle; the latest request has completed (blue)
   GARMIN_STATUS_SYNCING = 2, // Fetching Garmin data (yellow)
 } GarminStatus;
+
+typedef enum {
+  COLOR_THEME_GRAPHITE = 0,
+  COLOR_THEME_BLUEBERRY,
+  COLOR_THEME_GRAPE,
+  COLOR_THEME_TANGERINE,
+  COLOR_THEME_LIME,
+  COLOR_THEME_STRAWBERRY,
+  COLOR_THEME_COUNT
+} ColorThemeId;
+
+typedef struct {
+  GColor background;
+  GColor primary;
+  GColor secondary;
+  GColor accent;
+} ColorTheme;
 
 typedef struct {
   int8_t  bb;
@@ -89,6 +108,8 @@ static WatchSettings s_settings;
 static GarminData    s_garmin;
 static PebbleData    s_pebble;
 static time_t        s_garmin_sync_time;
+static ColorThemeId  s_color_theme_id = COLOR_THEME_GRAPHITE;
+static bool          s_is_reversed;
 
 static char s_time_buf[8];
 static char s_ampm_buf[3];
@@ -96,7 +117,84 @@ static char s_date_buf[8];
 static char s_day_buf[4];
 static char s_bat_buf[5];
 
+static const ColorTheme COLOR_THEMES[COLOR_THEME_COUNT] = {
+  [COLOR_THEME_GRAPHITE] = {
+    .background = GColorBlack, .primary = GColorWhite,
+    .secondary = GColorLightGray, .accent = GColorWhite,
+  },
+  [COLOR_THEME_BLUEBERRY] = {
+    .background = GColorBlack, .primary = GColorFromHEX(0x00AAFF),
+    .secondary = GColorWhite, .accent = GColorFromHEX(0x55FFFF),
+  },
+  [COLOR_THEME_GRAPE] = {
+    .background = GColorBlack, .primary = GColorFromHEX(0xAA00FF),
+    .secondary = GColorWhite, .accent = GColorFromHEX(0xFF55FF),
+  },
+  [COLOR_THEME_TANGERINE] = {
+    .background = GColorBlack, .primary = GColorFromHEX(0xFFAA00),
+    .secondary = GColorWhite, .accent = GColorFromHEX(0xFFFF55),
+  },
+  [COLOR_THEME_LIME] = {
+    .background = GColorBlack, .primary = GColorFromHEX(0xAAFF00),
+    .secondary = GColorWhite, .accent = GColorFromHEX(0x55FF00),
+  },
+  [COLOR_THEME_STRAWBERRY] = {
+    .background = GColorBlack, .primary = GColorFromHEX(0xFF0055),
+    .secondary = GColorWhite, .accent = GColorFromHEX(0xFF55AA),
+  },
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+static bool is_valid_theme_id(int theme_id) {
+  return theme_id >= 0 && theme_id < COLOR_THEME_COUNT;
+}
+
+static ColorTheme theme(void) {
+  ColorTheme colors = is_valid_theme_id((int)s_color_theme_id) ?
+      COLOR_THEMES[s_color_theme_id] : COLOR_THEMES[COLOR_THEME_GRAPHITE];
+  if (s_is_reversed) {
+    GColor background = colors.background;
+    colors.background = colors.primary;
+    colors.primary = background;
+    colors.secondary = background;
+    colors.accent = background;
+  }
+  return colors;
+}
+
+static void mark_all_layers_dirty(void) {
+  if (s_top_data_layer) layer_mark_dirty(s_top_data_layer);
+  if (s_status_layer) layer_mark_dirty(s_status_layer);
+  if (s_time_layer) layer_mark_dirty(s_time_layer);
+  if (s_garmin_status_layer) layer_mark_dirty(s_garmin_status_layer);
+  if (s_data_layer) layer_mark_dirty(s_data_layer);
+  if (s_border_layer) layer_mark_dirty(s_border_layer);
+}
+
+static void apply_color_settings(int theme_id, bool is_reversed) {
+  if (!is_valid_theme_id(theme_id)) theme_id = COLOR_THEME_GRAPHITE;
+  s_color_theme_id = (ColorThemeId)theme_id;
+  s_is_reversed = is_reversed;
+  persist_write_int(THEME_KEY, theme_id);
+  persist_write_bool(REVERSE_KEY, is_reversed);
+  if (s_window) window_set_background_color(s_window, theme().background);
+  mark_all_layers_dirty();
+}
+
+static void colorize_bitmap(GBitmap *bitmap, GColor foreground) {
+  if (!bitmap) return;
+  GColor *palette = gbitmap_get_palette(bitmap);
+  if (palette) {
+    palette[0] = theme().background;
+    palette[1] = foreground;
+  }
+}
+
+static int32_t tuple_to_int(const Tuple *tuple) {
+  if (!tuple) return 0;
+  return tuple->type == TUPLE_CSTRING ? atoi(tuple->value->cstring) : tuple->value->int32;
+}
 
 static void settings_init_defaults(void) {
   strncpy(s_settings.top_slot[0], "DATE", SLOT_STR_LEN);
@@ -351,18 +449,21 @@ static void draw_pdc_top(GContext *ctx, uint32_t res_id, int x, int y, int slot_
   GDrawCommandImage *pdc = gdraw_command_image_create_with_resource(res_id);
   if (!pdc) return;
 
-  // 黒背景で見えるよう黒↔白を反転（透明はそのまま）
+  ColorTheme colors = theme();
+  // Map the monochrome PDC artwork into the active face colors.
   GDrawCommandList *list = gdraw_command_image_get_command_list(pdc);
+  GColor detail_color = (res_id == RESOURCE_ID_ICON_HEART) ?
+      colors.accent : colors.secondary;
   int n = gdraw_command_list_get_num_commands(list);
   for (int i = 0; i < n; i++) {
     GDrawCommand *cmd = gdraw_command_list_get_command(list, i);
     GColor fill = gdraw_command_get_fill_color(cmd);
-    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, GColorWhite);
-    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, GColorDarkGray);
+    if (fill.argb == GColorBlack.argb)      gdraw_command_set_fill_color(cmd, colors.primary);
+    else if (fill.argb == GColorWhite.argb) gdraw_command_set_fill_color(cmd, detail_color);
     if (gdraw_command_get_stroke_width(cmd) > 0) {
       GColor stroke = gdraw_command_get_stroke_color(cmd);
-      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, GColorWhite);
-      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, GColorDarkGray);
+      if (stroke.argb == GColorBlack.argb)      gdraw_command_set_stroke_color(cmd, colors.primary);
+      else if (stroke.argb == GColorWhite.argb) gdraw_command_set_stroke_color(cmd, colors.secondary);
     }
   }
 
@@ -457,7 +558,8 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
   int slot_w = b.size.w / 3;
   int lh = b.size.h / 2;
 
-  graphics_context_set_stroke_color(ctx, GColorDarkGray);
+  ColorTheme colors = theme();
+  graphics_context_set_stroke_color(ctx, colors.accent);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(slot_w,     0), GPoint(slot_w,     b.size.h));
   graphics_draw_line(ctx, GPoint(slot_w * 2, 0), GPoint(slot_w * 2, b.size.h));
@@ -467,16 +569,16 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
     int x = i * slot_w;
     const char *key = s_settings.top_slot[i];
     top_slot_get_lines(key, line1, sizeof(line1), line2, sizeof(line2));
-    graphics_context_set_text_color(ctx, GColorWhite);
+    graphics_context_set_text_color(ctx, colors.primary);
 
     if (strcmp(key, "BAT") == 0) {
       // 上段: outdoor-typical スタイルのバッテリーバー
       int bw = slot_w - 30, bh = 14;
       int bx = x + 15, by = (lh - bh) / 2;
-      graphics_context_set_stroke_color(ctx, GColorWhite);
+      graphics_context_set_stroke_color(ctx, colors.primary);
       graphics_context_set_stroke_width(ctx, 2);
       graphics_draw_round_rect(ctx, GRect(bx, by, bw, bh), 2);
-      graphics_context_set_fill_color(ctx, GColorWhite);
+      graphics_context_set_fill_color(ctx, colors.primary);
       graphics_fill_rect(ctx, GRect(bx + bw, by + bh/2 - 2, 3, 4), 1, GCornersRight);
       GColor fc = (s_battery_level <= 20) ? GColorRed :
                   (s_battery_level <= 40) ? GColorChromeYellow : GColorGreen;
@@ -485,7 +587,7 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
       graphics_context_set_fill_color(ctx, fc);
       graphics_fill_rect(ctx, GRect(bx + 3, by + 3, fw, bh - 6), 0, GCornerNone);
       // 下段: %
-      graphics_context_set_text_color(ctx, GColorWhite);
+      graphics_context_set_text_color(ctx, colors.primary);
       draw_num_with_unit(ctx, line2, s_font_num, s_font_unit,
           GRect(x + 1, lh - 6, slot_w - 2, lh), GTextAlignmentCenter);
 
@@ -504,7 +606,7 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
         graphics_draw_text(ctx, line2, s_font_num,
             GRect(vx, trect.origin.y, vsz.w + 4, trect.size.h),
             GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-        graphics_context_set_stroke_color(ctx, GColorWhite);
+        graphics_context_set_stroke_color(ctx, colors.primary);
         graphics_context_set_stroke_width(ctx, 1);
         graphics_draw_line(ctx, GPoint(vx, trect.origin.y + vsz.h + 2),
                                 GPoint(vx + vsz.w, trect.origin.y + vsz.h + 2));
@@ -549,6 +651,7 @@ static void top_data_update_proc(Layer *layer, GContext *ctx) {
 static void status_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int cy = b.size.h / 2;
+  ColorTheme colors = theme();
 
   // BT(12) + gap(6) + Battery(20) = 38px, centered in layer
   int total_w = 12 + 10 + 20;
@@ -558,6 +661,7 @@ static void status_update_proc(Layer *layer, GContext *ctx) {
   GBitmap *bt_bmp = gbitmap_create_with_resource(
       bt ? RESOURCE_ID_BT_CONNECTED : RESOURCE_ID_BT_DISCONNECTED);
   if (bt_bmp) {
+    colorize_bitmap(bt_bmp, colors.primary);
     graphics_context_set_compositing_mode(ctx, GCompOpSet);
     graphics_draw_bitmap_in_rect(ctx, bt_bmp, GRect(sx, cy - 6, 12, 12));
     gbitmap_destroy(bt_bmp);
@@ -572,6 +676,7 @@ static void status_update_proc(Layer *layer, GContext *ctx) {
   if (bat_idx > 7) bat_idx = 7;
   GBitmap *bat_bmp = gbitmap_create_with_resource(bat_res[bat_idx]);
   if (bat_bmp) {
+    colorize_bitmap(bat_bmp, colors.primary);
     graphics_context_set_compositing_mode(ctx, GCompOpSet);
     graphics_draw_bitmap_in_rect(ctx, bat_bmp, GRect(sx + 18, cy - 5, 20, 10));
     gbitmap_destroy(bat_bmp);
@@ -581,6 +686,7 @@ static void status_update_proc(Layer *layer, GContext *ctx) {
 static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int cy = b.size.h / 2;
+  ColorTheme colors = theme();
 
   GColor icon_color = (s_garmin.status == GARMIN_STATUS_READY) ? GColorBlueMoon :
                       (s_garmin.status == GARMIN_STATUS_SYNCING) ? GColorChromeYellow : GColorRed;
@@ -615,7 +721,7 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
   int total_w = text_w + gap + icon_sz + sync_gap + sync_mark_w + elapsed_size.w;
   int sx = (b.size.w - total_w) / 2;
 
-  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_context_set_text_color(ctx, colors.primary);
   graphics_draw_text(ctx, "GARMIN", fonts_get_system_font(FONT_KEY_GOTHIC_14),
       GRect(sx, -2, text_w, 14),
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
@@ -628,7 +734,7 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
     // 1-bitパレット形式: palette[0]=背景色, palette[1]=前景色を状態色に変更
     GColor *palette = gbitmap_get_palette(icon);
     if (palette) {
-      palette[0] = GColorBlack;
+      palette[0] = colors.background;
       palette[1] = icon_color;
     }
     graphics_context_set_compositing_mode(ctx, GCompOpSet);
@@ -641,6 +747,7 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
     int sync_y = cy - sync_icon_sz / 2;
     GBitmap *sync_icon = gbitmap_create_with_resource(RESOURCE_ID_SYNC);
     if (sync_icon) {
+      colorize_bitmap(sync_icon, colors.primary);
       graphics_context_set_compositing_mode(ctx, GCompOpSet);
       graphics_draw_bitmap_in_rect(ctx, sync_icon,
           GRect(sync_x, sync_y, sync_icon_sz, sync_icon_sz));
@@ -648,7 +755,7 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
     }
   }
 
-  graphics_context_set_text_color(ctx, GColorLightGray);
+  graphics_context_set_text_color(ctx, colors.primary);
   graphics_draw_text(ctx, elapsed, sync_font,
       GRect(sync_x + sync_mark_w, -2, elapsed_size.w + 2, 14),
       GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
@@ -657,7 +764,7 @@ static void garmin_status_update_proc(Layer *layer, GContext *ctx) {
 static void time_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   GFont f = s_font_time ? s_font_time : fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD);
-  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_context_set_text_color(ctx, theme().primary);
   graphics_draw_text(ctx, s_time_buf, f,
       GRect(-8, -4, b.size.w + 16, b.size.h),
       GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
@@ -671,8 +778,9 @@ static void time_update_proc(Layer *layer, GContext *ctx) {
 static void data_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   int slot_w = b.size.w / 4;
+  ColorTheme colors = theme();
 
-  graphics_context_set_stroke_color(ctx, GColorDarkGray);
+  graphics_context_set_stroke_color(ctx, colors.accent);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(slot_w,     0), GPoint(slot_w,     b.size.h));
   graphics_draw_line(ctx, GPoint(slot_w * 2, 0), GPoint(slot_w * 2, b.size.h));
@@ -691,6 +799,7 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
     if (res_id) {
       GBitmap *icon = gbitmap_create_with_resource(res_id);
       if (icon) {
+        colorize_bitmap(icon, colors.primary);
         graphics_context_set_compositing_mode(ctx, GCompOpSet);
         int ix = x + (slot_w - 18) / 2;
         graphics_draw_bitmap_in_rect(ctx, icon, GRect(ix, 6, 18, 18));
@@ -707,14 +816,14 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
     GFont unit_font = s_font_unit;
     int val_y       = large ? 23 : 17;
 
-    graphics_context_set_text_color(ctx, GColorWhite);
+    graphics_context_set_text_color(ctx, colors.primary);
     draw_num_with_unit(ctx, val, num_font, unit_font,
         GRect(x + 1, val_y, slot_w - 2, 28), GTextAlignmentCenter);
     if (strcmp(key, "RHR") == 0) {
       GRect big = GRect(0, 0, 200, 50);
       GSize vsz = graphics_text_layout_get_content_size(val, num_font, big, GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft);
       int vx = x + 1 + (slot_w - 2 - vsz.w) / 2;
-      graphics_context_set_stroke_color(ctx, GColorWhite);
+      graphics_context_set_stroke_color(ctx, colors.primary);
       graphics_context_set_stroke_width(ctx, 1);
       graphics_draw_line(ctx, GPoint(vx, val_y + vsz.h + 2),
                               GPoint(vx + vsz.w, val_y + vsz.h + 2));
@@ -724,7 +833,7 @@ static void data_update_proc(Layer *layer, GContext *ctx) {
 
 static void border_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
-  graphics_context_set_stroke_color(ctx, GColorWhite);
+  graphics_context_set_stroke_color(ctx, theme().primary);
   graphics_context_set_stroke_width(ctx, 4);
   graphics_draw_round_rect(ctx, GRect(1, 1, b.size.w - 2, b.size.h - 2), 16);
 }
@@ -876,6 +985,11 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
   t = dict_find(iterator, MESSAGE_KEY_GARMIN_TREADY);
   if (t) { s_garmin.train_ready = (int8_t)t->value->int32; garmin_updated = true; }
 
+  t = dict_find(iterator, MESSAGE_KEY_COLOR_THEME);
+  if (t) apply_color_settings(tuple_to_int(t), s_is_reversed);
+  t = dict_find(iterator, MESSAGE_KEY_COLOR_REVERSE);
+  if (t) apply_color_settings((int)s_color_theme_id, tuple_to_int(t) != 0);
+
   // Pebble native data from JS
   t = dict_find(iterator, MESSAGE_KEY_PEBBLE_HEART_RATE);
   if (t) { s_pebble.heart_rate = (int16_t)t->value->int32; pebble_updated = true; }
@@ -982,7 +1096,15 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 static void main_window_load(Window *window) {
   Layer *wl = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(wl);
-  window_set_background_color(window, GColorBlack);
+  if (persist_exists(THEME_KEY)) {
+    int theme_id = persist_read_int(THEME_KEY);
+    s_color_theme_id = is_valid_theme_id(theme_id) ?
+        (ColorThemeId)theme_id : COLOR_THEME_GRAPHITE;
+  }
+  if (persist_exists(REVERSE_KEY)) {
+    s_is_reversed = persist_read_bool(REVERSE_KEY);
+  }
+  window_set_background_color(window, theme().background);
 
   s_font_time  = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_RUSSO_ONE_70));
   s_font_num   = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);

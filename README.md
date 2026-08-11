@@ -10,6 +10,7 @@ A Pebble watchface for Pebble Time 2 that displays fitness data fetched from Gar
 - Date and day of week
 - Pebble battery bar with percentage
 - Garmin Connect connection status indicator
+- Color themes: Graphite, Blueberry, Grape, Tangerine, Lime, and Strawberry, with a Reverse option
 - 3 configurable top slots for Pebble native metrics (date, battery, heart rate, steps, sleep, weather, etc.)
 - 4 configurable bottom slots for Garmin Connect metrics
 
@@ -55,9 +56,10 @@ A Pebble watchface for Pebble Time 2 that displays fitness data fetched from Gar
 1. Install the watchface via the Pebble app
 2. Open the watchface settings
 3. Enter your Garmin Connect username and password
-4. Select up to 6 metrics to display in the data slots
-5. Set the refresh interval (10–50 minutes)
-6. Save — data will sync immediately
+4. Select a color theme and optionally enable Reverse
+5. Select the metrics to display in the data slots
+6. Set the refresh interval (10–50 minutes)
+7. Save — data will sync immediately
 
 ## Building
 

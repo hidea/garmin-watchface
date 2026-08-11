@@ -65,7 +65,9 @@
       "GARMIN_HEAT",
       "GARMIN_ALTACL",
       "GARMIN_TSTATUS",
-      "GARMIN_TREADY"
+      "GARMIN_TREADY",
+      "COLOR_THEME",
+      "COLOR_REVERSE"
     ],
     "resources": {
       "media": [
@@ -173,7 +175,8 @@
         {
           "type": "bitmap",
           "name": "SYNC",
-          "file": "images/sync.png"
+          "file": "images/sync.png",
+          "storageFormat": "1Bit"
         },
         {
           "type": "raw",
